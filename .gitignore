@@ -120,4 +120,4 @@ tools/linux-capture/*.db-shm
 tools/linux-capture/captures/
 
 # ── Research datasets (RESEARCH_BRIEF.md) — never committed ─────────────────
-research-data/
+/research-data/
