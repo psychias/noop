@@ -2091,7 +2091,7 @@ public enum SleepStager {
     /// costs far more data than it saves, and both medians (over intervals, then over windows) dilute a
     /// single spurious peak among a five-minute window's worth.
     /// Returns NaN when too few intervals survive (honest no-data).
-    static func respRateFromRR(_ rr: [RRInterval], start: Int, end: Int) -> Double {
+    public static func respRateFromRR(_ rr: [RRInterval], start: Int, end: Int) -> Double {
         let nan = Double.nan
         if end <= start { return nan }
 
@@ -2915,7 +2915,7 @@ public enum SleepStager {
             + "gated=\(gatedFloor.map(String.init) ?? "nil") shipped=\(shippedFloor) gateMoved=\(moved)"
     }
 
-    static func sessionRestingHR(start: Int, end: Int, hr: [HRSample]) -> Int? {
+    public static func sessionRestingHR(start: Int, end: Int, hr: [HRSample]) -> Int? {
         let seg = hr.filter { $0.ts >= start && $0.ts <= end }
         guard !seg.isEmpty else { return nil }
         let windowS = 5 * 60
@@ -2959,7 +2959,7 @@ public enum SleepStager {
 
     /// Mean RMSSD over 5-min tumbling windows across the session (ms), or nil.
     /// A window counts only with `HRVAnalyzer.minBeats` clean intervals (see `sessionHrvWindows`).
-    static func sessionAvgHRV(start: Int, end: Int, rr: [RRInterval]) -> Double? {
+    public static func sessionAvgHRV(start: Int, end: Int, rr: [RRInterval]) -> Double? {
         let vals = sessionHrvWindows(start: start, end: end, rr: rr, stages: []).compactMap { $0.rmssd }
         if vals.isEmpty { return nil }
         // #1118: refuse the night outright when its own R-R banks more beat-time than the wall clock it
@@ -2981,7 +2981,7 @@ public enum SleepStager {
     /// definition of "refused": `sessionAvgHRV` gates on it, and `AnalyticsEngine` asks it whether a main
     /// night's missing HRV was refused rather than never measured, so the two cannot disagree about which
     /// nights were refused. Byte-parity twin of Kotlin `SleepStager.sessionHrvOverCounted`.
-    static func sessionHrvOverCounted(start: Int, end: Int, rr: [RRInterval]) -> Bool {
+    public static func sessionHrvOverCounted(start: Int, end: Int, rr: [RRInterval]) -> Bool {
         let seg = rr.filter { $0.ts >= start && $0.ts <= end }
         let segTs = seg.map { $0.ts }
         let segMs = seg.map { Double($0.rrMs) }
@@ -3006,7 +3006,7 @@ public enum SleepStager {
     /// the final one, which is `[t, end]`, so a beat sitting exactly on an aligned `end` lands in a
     /// window instead of being admitted by the prefilter and then dropped. Window stage tagging and
     /// `startTs` are unchanged — the final window keeps its half-open center `t + windowS / 2`.
-    static func sessionHrvWindows(start: Int, end: Int, rr: [RRInterval], stages: [StageSegment]) -> [HrvWindow] {
+    public static func sessionHrvWindows(start: Int, end: Int, rr: [RRInterval], stages: [StageSegment]) -> [HrvWindow] {
         // CONTRACT: `rr` MUST already be ts-sorted (RMSSD is built from SUCCESSIVE differences, so a bucket
         // has to be chronological). The value path passes the loop's pre-sorted `rrS`; the trace caller sorts
         // its own copy. Not sorted here on purpose — re-sorting the value path could reorder same-second RR
