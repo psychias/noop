@@ -15,6 +15,7 @@ on:
       - 'Tools/SleepBench/**'
       - 'Tools/SleepPSG/**'
       - 'Tools/Backfill/**'
+      - 'Tools/MetricsBench/**'
       - '.github/workflows/swift-packages.yml'
       # Mirror of the note in android.yml: package tests read the ANDROID oracles to catch a one-sided
       # edit, and one reads Strand/Liquid/LiquidCore.swift. Editing only that side would otherwise skip
@@ -28,6 +29,7 @@ on:
       - 'Tools/SleepBench/**'
       - 'Tools/SleepPSG/**'
       - 'Tools/Backfill/**'
+      - 'Tools/MetricsBench/**'
       - '.github/workflows/swift-packages.yml'
       # Mirror of the note in android.yml: package tests read the ANDROID oracles to catch a one-sided
       # edit, and one reads Strand/Liquid/LiquidCore.swift. Editing only that side would otherwise skip
@@ -87,6 +89,7 @@ jobs:
           - SleepBench
           - SleepPSG
           - Backfill
+          - MetricsBench
     steps:
       - name: Checkout
         uses: actions/checkout@v5
