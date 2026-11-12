@@ -1,0 +1,50 @@
+metricsbench resp — 2026-11-12T16:34:49Z
+regenerate: metricsbench resp --data research-data --seed 1 --csv research-data/bench/resp-windows.csv
+fantasia: 40 records from /Users/steliospsychias/Desktop/noop/research-data/fantasia
+slpdb: 18 records from /Users/steliospsychias/Desktop/noop/research-data/slpdb
+records=58 beats=652723 seed=1
+
+== RESP: reference audit (5-min windows of the respiration waveform)
+  scored=1234  excluded: count/spectral disagree >2 bpm=729  flat=1
+
+== RESP: per-window, estimate − reference (breaths/min); 'retained' = estimator returned a number
+  dense                  retained  1196/ 1234 (96.9%)  n=1196 bias=-1.21 LoA=[-6.57, +4.15] MAE=1.91 MAPE=12.3% CCC=0.609 r=0.703 within=71%
+  cap4                   retained  1196/ 1234 (96.9%)  n=1196 bias=-1.21 LoA=[-6.57, +4.15] MAE=1.91 MAPE=12.3% CCC=0.609 r=0.703 within=71%
+  cap4+holes10%+fillers  retained   534/ 1234 (43.3%)  n=534 bias=-1.06 LoA=[-6.12, +4.00] MAE=1.83 MAPE=12.2% CCC=0.659 r=0.747 within=70%
+  cap4+holes30%+fillers  retained    65/ 1234 ( 5.3%)  n=65 bias=-1.37 LoA=[-6.93, +4.18] MAE=1.97 MAPE=11.9% CCC=0.524 r=0.648 within=68%
+  by group (dense):
+    elderly    n=240 bias=-2.22 LoA=[-8.01, +3.56] MAE=2.65 MAPE=14.6% CCC=0.280 r=0.417 within=57%
+    slpdb      n=708 bias=-0.55 LoA=[-5.13, +4.03] MAE=1.43 MAPE=10.5% CCC=0.698 r=0.759 within=79%
+    young      n=248 bias=-2.14 LoA=[-8.02, +3.75] MAE=2.57 MAPE=15.3% CCC=0.439 r=0.557 within=59%
+  by stage class (dense):
+    ?          n=111 bias=-0.71 LoA=[-5.45, +4.03] MAE=1.30 MAPE=7.9% CCC=0.737 r=0.808 within=79%
+    nrem12     n=322 bias=-0.91 LoA=[-5.57, +3.75] MAE=1.54 MAPE=9.9% CCC=0.645 r=0.711 within=77%
+    nrem34     n=49 bias=-0.45 LoA=[-1.78, +0.87] MAE=0.62 MAPE=4.4% CCC=0.936 r=0.960 within=98%
+    rem        n=33 bias=-1.54 LoA=[-5.44, +2.36] MAE=1.62 MAPE=9.8% CCC=0.587 r=0.696 within=76%
+    wake       n=193 bias=+0.29 LoA=[-4.27, +4.86] MAE=1.51 MAPE=14.5% CCC=0.652 r=0.729 within=79%
+  by reference tercile (dense):
+    slow       n=403 bias=+0.67 LoA=[-2.35, +3.69] MAE=1.04 MAPE=11.5% CCC=0.321 r=0.365 within=86%
+    mid        n=389 bias=-0.82 LoA=[-2.92, +1.28] MAE=1.06 MAPE=7.1% CCC=0.539 r=0.657 within=87%
+    fast       n=404 bias=-3.47 LoA=[-9.63, +2.70] MAE=3.60 MAPE=18.1% CCC=-0.028 r=-0.069 within=40%
+
+== RESP: per-record night value (shipped median over the whole record) vs reference median
+  dense                  retained  58/ 58  n=58 bias=-1.95 LoA=[-7.69, +3.79] MAE=2.54 MAPE=15.8% CCC=0.427 r=0.640 within=36%
+  cap4                   retained  58/ 58  n=58 bias=-1.95 LoA=[-7.69, +3.79] MAE=2.54 MAPE=15.8% CCC=0.427 r=0.640 within=36%
+  cap4+holes10%+fillers  retained  58/ 58  n=58 bias=-1.96 LoA=[-7.57, +3.64] MAE=2.53 MAPE=15.8% CCC=0.441 r=0.671 within=36%
+  cap4+holes30%+fillers  retained  54/ 58  n=54 bias=-1.88 LoA=[-8.08, +4.32] MAE=2.59 MAPE=16.2% CCC=0.435 r=0.566 within=37%
+
+== RESP: false-emit on shuffled R-R values (timestamps kept; no breathing exists in the input)
+  records=58  emitted a number=58  values: median 14.33  min 12.00  max 16.55
+  (a correct estimator refuses all of these; 13.33 is the peak-picker's own floor)
+
+== RESP: direction tracking on synthetic RSA (dense, whole-second ts)
+  amplitude \ rate       8      11      15      20      24
+  60 ms           refuse   11.43   15.00   20.00   12.00
+  30 ms             8.14   11.04   15.00   20.00   12.00
+  15 ms             8.08   11.17   15.00   20.00   12.00
+  5 ms             12.00   12.00   15.00   18.46   12.00
+  0 ms             12.32   12.32   12.32   12.32   12.32
+  (amplitude 0 ms has no breathing in it; every number on that row is a false emit)
+
+per-window CSV written to research-data/bench/resp-windows.csv
+
