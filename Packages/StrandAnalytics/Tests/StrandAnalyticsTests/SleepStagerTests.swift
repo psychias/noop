@@ -849,9 +849,10 @@ final class SleepStagerTests: XCTestCase {
         // session HRV if left in. cleanRR's Malik ectopic rejection drops them, so the
         // cleaned series is steady → HRV ≈ 0. Pre-fix (rangeFilter only) this path
         // returned ~200 ms; this guards the #262/#235 fix against regression.
+        // Three windows, because a night reports HRV only from `HRVAnalyzer.nightMinWindows` usable ones.
         var rr: [RRInterval] = []
-        let start = 1000, end = start + 300
-        for i in 0..<300 {
+        let start = 1000, end = start + 900
+        for i in 0..<900 {
             rr.append(RRInterval(ts: start + i, rrMs: (i % 15 == 0) ? 1500 : 900))
         }
         let hrv = SleepStager.sessionAvgHRV(start: start, end: end, rr: rr)
@@ -986,15 +987,15 @@ final class SleepStagerTests: XCTestCase {
     }
 
     func testSessionHrvWindowsAlignedEndpointBeatsFillTheFinalWindow() {
-        // 120 beats in the opening window plus 25 beats exactly on an aligned end = 600 (enough to clear
-        // the `minBeats` floor). The second window is the final one, so it closes on `end` and holds them;
-        // before the fix it was emitted empty and its RMSSD was nil. Constant 900 ms RR keeps the
-        // RMSSD analytically 0.0 on both platforms — this pins the BINNING, not the RMSSD math.
+        // 120 beats in the opening window plus 35 beats exactly on an aligned end = 600 (34 valid pairs,
+        // enough to clear the `windowRefusePairs` floor). The second window is the final one, so it closes
+        // on `end` and holds them; before the fix it was emitted empty and its RMSSD was nil. Constant 900 ms
+        // RR keeps the RMSSD analytically 0.0 on both platforms — this pins the BINNING, not the RMSSD math.
         var rr: [RRInterval] = (0..<120).map { RRInterval(ts: $0, rrMs: 900) }
-        rr.append(contentsOf: (0..<25).map { _ in RRInterval(ts: 600, rrMs: 900) })
+        rr.append(contentsOf: (0..<35).map { _ in RRInterval(ts: 600, rrMs: 900) })
         let wins = SleepStager.sessionHrvWindows(start: 0, end: 600, rr: rr, stages: [])
         XCTAssertEqual(wins.map { $0.startTs }, [0, 300])
-        XCTAssertEqual(wins.map { $0.cleanBeats }, [120, 25],
+        XCTAssertEqual(wins.map { $0.cleanBeats }, [120, 35],
                        "the endpoint beats must fill the final window")
         XCTAssertEqual(wins.map { $0.rmssd }, [0.0, 0.0])
     }
@@ -1009,30 +1010,65 @@ final class SleepStagerTests: XCTestCase {
         XCTAssertEqual(wins.map { $0.cleanBeats }, [120, 3])
     }
 
-    func testSessionAvgHRVZeroLengthWindowUsesTheEndpointBeats() {
-        // The value-level consequence: a zero-length window (start == end) is one closed bin, so
-        // beats admitted by the prefilter produce a number instead of nil.
-        let rr = (0..<25).map { _ in RRInterval(ts: 1000, rrMs: 900) }
-        XCTAssertEqual(SleepStager.sessionAvgHRV(start: 1000, end: 1000, rr: rr), 0.0)
+    func testSessionHrvWindowsZeroLengthWindowUsesTheEndpointBeats() {
+        // The window-level consequence: a zero-length window (start == end) is one closed bin, so beats
+        // admitted by the prefilter produce a window with a number instead of nil. The NIGHT built from it
+        // is refused on purpose — one window is below `HRVAnalyzer.nightMinWindows` — so the value-level
+        // call returns nil for a different, documented reason.
+        let rr = (0..<35).map { _ in RRInterval(ts: 1000, rrMs: 900) }
+        let wins = SleepStager.sessionHrvWindows(start: 1000, end: 1000, rr: rr, stages: [])
+        XCTAssertEqual(wins.map { $0.cleanBeats }, [35])
+        XCTAssertEqual(wins.map { $0.rmssd }, [0.0])
+        XCTAssertNil(SleepStager.sessionAvgHRV(start: 1000, end: 1000, rr: rr),
+                     "a one-window session is below the night's minimum and reports nothing")
     }
 
-    func testSessionHrvWindowNeedsMinBeatsCleanIntervals() {
-        // A window emits an RMSSD only with `HRVAnalyzer.minBeats` (20) clean intervals: 19 is nil, 20 is
-        // a value. Before the floor a window needed just 2, and weighed as much as a full one in the mean.
+    func testSessionHrvWindowNeedsWindowRefusePairsValidPairs() {
+        // A window emits an RMSSD only with `HRVAnalyzer.windowRefusePairs` (30) valid successive pairs,
+        // i.e. 31 clean, time-consistent beats: 30 beats is nil, 31 is a value. The floor used to be 20
+        // clean beats; Baek 2015 puts the shortest reliable RMSSD length at 30 s.
         func window(_ n: Int) -> Double? {
             let rr = (0..<n).map { RRInterval(ts: $0, rrMs: 900) }
             return SleepStager.sessionHrvWindows(start: 0, end: 300, rr: rr, stages: []).first?.rmssd
         }
-        XCTAssertNil(window(HRVAnalyzer.minBeats - 1))
-        XCTAssertEqual(window(HRVAnalyzer.minBeats), 0.0)
+        XCTAssertNil(window(HRVAnalyzer.windowRefusePairs))
+        XCTAssertEqual(window(HRVAnalyzer.windowRefusePairs + 1), 0.0)
     }
 
     func testSessionAvgHRVIgnoresASparseWindow() {
-        // A full window of alternating 900/1000 ms (RMSSD 100) next to a sparse one of 900/1300 ms
-        // (RMSSD 400, 10 beats). Without the floor the sparse window counted equally and the mean was 250.
-        let full = (0..<300).map { RRInterval(ts: $0, rrMs: $0 % 2 == 0 ? 900 : 1000) }
-        let sparse = (0..<10).map { RRInterval(ts: 300 + $0 * 25, rrMs: $0 % 2 == 0 ? 900 : 1300) }
-        XCTAssertEqual(SleepStager.sessionAvgHRV(start: 0, end: 600, rr: full + sparse), 100.0)
+        // Three full windows of alternating 900/1000 ms (RMSSD 100) next to a sparse one of 900/1300 ms
+        // (RMSSD 400, 10 beats). Without the floor the sparse window counted equally and pulled the mean
+        // up; with it the sparse window is refused and the night is the full windows' 100.
+        let full = (0..<900).map { RRInterval(ts: $0, rrMs: $0 % 2 == 0 ? 900 : 1000) }
+        let sparse = (0..<10).map { RRInterval(ts: 900 + $0 * 25, rrMs: $0 % 2 == 0 ? 900 : 1300) }
+        XCTAssertEqual(SleepStager.sessionAvgHRV(start: 0, end: 1200, rr: full + sparse), 100.0)
+    }
+
+    func testSessionHrvWindowsSkipAPairWhoseWallClockSaysABeatIsMissing() {
+        // A 950/1050/1150/1050 triangle of time-consistent beats: every successive |difference| is 100 ms, so
+        // RMSSD is exactly 100. Dropping every fourth beat leaves the survivors' R-R values untouched, but the
+        // difference across each gap (1150 → 950) is a two-beat difference of 200 ms. Counted, as the pre-1.1
+        // code did, those splices inflate the window to ≈ 141. Each gap spans 2.00 s against a 0.95 s
+        // interval, so the wall clock catches every one (`HRVAnalyzer.pairIsTimeConsistent`), and every pair
+        // that survives is a real pair with |difference| 100: the window reads exactly 100 again. (The cycle
+        // sums to 4.2 s, so the beat phase drifts and no stamping accident repeats on every cycle.)
+        var dense: [RRInterval] = []
+        var beatMs = 0
+        for i in 0..<320 {
+            let ms = [950, 1050, 1150, 1050][i % 4]
+            beatMs += ms
+            dense.append(RRInterval(ts: beatMs / 1000, rrMs: ms))
+        }
+        let thinned = dense.enumerated().compactMap { $0.offset % 4 == 3 ? nil : $0.element }
+        let legacy = HRVAnalyzer.cleanRRGapAware(thinned.map { Double($0.rrMs) })
+        let spliced = HRVAnalyzer.rmssdGapAware(legacy.nn, legacy.contiguous) ?? 0
+        XCTAssertGreaterThan(spliced, 130, "precondition: counting the splices inflates the window")
+        let w = SleepStager.sessionHrvWindows(start: 0, end: 300, rr: thinned, stages: [])
+        XCTAssertEqual(w.count, 1)
+        XCTAssertEqual(w[0].rmssd ?? -1, 100.0, accuracy: 1e-9, "the skipped splices no longer inflate the window")
+        XCTAssertEqual(w[0].tier, .limited, "a quarter of the beats missing inside the span is limited, not full")
+        XCTAssertLessThan(w[0].coverage, 0.80)
+        XCTAssertLessThan(w[0].validPairs, w[0].cleanBeats - 1 - 60, "the skipped pairs are counted out")
     }
 
     // MARK: - Helper robustness

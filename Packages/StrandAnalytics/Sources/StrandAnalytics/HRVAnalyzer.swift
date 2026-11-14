@@ -166,6 +166,61 @@ public enum HRVAnalyzer {
     /// the difference across a removed beat. `CleanSeries.nn` equals `cleanRR` value for value. Kotlin twin
     /// of `HrvAnalyzer.cleanRRGapAware`.
     public static func cleanRRGapAware(_ rr: [Double]) -> CleanSeries {
+        let kept = cleanRRGapAwareIndexed(rr)
+        // A survivor is contiguous with its predecessor only when their ORIGINAL indices are adjacent.
+        var contiguous: [Bool] = []; contiguous.reserveCapacity(kept.nn.count)
+        for i in 0..<kept.nn.count { contiguous.append(i > 0 && kept.orig[i] == kept.orig[i - 1] + 1) }
+        return CleanSeries(nn: kept.nn, contiguous: contiguous)
+    }
+
+    /// `cleanRRGapAware` that also asks the WALL CLOCK whether two stored-adjacent survivors were adjacent
+    /// BEATS. `contiguous[i]` is true only when `nn[i]` and `nn[i-1]` were adjacent in the original series
+    /// AND `pairIsTimeConsistent` accepts the gap between their timestamps, so a beat the strap never
+    /// reported is skipped by `rmssdGapAware` exactly like a beat the filters removed. `nn` is unchanged.
+    /// `tsSec` must be the row timestamps aligned with `rrMs` (same count). Byte-parity twin of Kotlin
+    /// `HrvAnalyzer.cleanRRTimeAware`.
+    ///
+    /// Why this exists (Tier 0 baseline, `docs/research/results/00-tier0-baselines.md`): the shipped flag
+    /// came only from range/ectopic rejection, so a beat lost in capture turned a one-beat difference into a
+    /// two-beat difference and inflated RMSSD by about 2 % per 5 % of beats lost singly. Contiguous loss
+    /// (holes) did not bias it, which is why this is a per-pair rule and not a per-window one.
+    public static func cleanRRTimeAware(rrMs rr: [Double], tsSec: [Int],
+                                       gapToleranceS: Double = pairGapToleranceS) -> CleanSeries {
+        precondition(rr.count == tsSec.count, "rrMs and tsSec must be the same length")
+        let kept = cleanRRGapAwareIndexed(rr)
+        var contiguous: [Bool] = []; contiguous.reserveCapacity(kept.nn.count)
+        for i in 0..<kept.nn.count {
+            let adjacent = i > 0 && kept.orig[i] == kept.orig[i - 1] + 1
+            contiguous.append(adjacent && pairIsTimeConsistent(
+                gapS: Double(tsSec[kept.orig[i]] - tsSec[kept.orig[i - 1]]), rrMs: kept.nn[i], toleranceS: gapToleranceS))
+        }
+        return CleanSeries(nn: kept.nn, contiguous: contiguous)
+    }
+
+    /// Whether the wall-clock gap between two stored-adjacent beats is consistent with them being adjacent
+    /// heartbeats: the gap may exceed the second beat's own R-R by at most `toleranceS`. One-sided on
+    /// purpose. A gap that is too SMALL is whole-second stamping (several beats share one second) or
+    /// banking, which `beatAccurateFraction` already measures and which does not splice a difference; a
+    /// gap that is too LARGE means a beat went unreported between the two, and the difference across it is
+    /// not a successive difference. With whole-second stamps an honest pair's gap minus its R-R lies in
+    /// (−1, 1) s, so the shipped 0.5 s tolerance accepts every honest pair whose R-R fraction is above
+    /// 0.5 s and skips, at most, a fraction equal to that R-R's sub-second part otherwise; a single lost
+    /// beat at sleeping heart rates is caught 85–100 % of the time. Pure. Byte-parity twin of Kotlin
+    /// `pairIsTimeConsistent`.
+    public static func pairIsTimeConsistent(gapS: Double, rrMs: Double, toleranceS: Double = pairGapToleranceS) -> Bool {
+        gapS - rrMs / 1000.0 <= toleranceS
+    }
+
+    /// Tolerance (seconds) a stored-adjacent pair's wall-clock gap may exceed its R-R before the pair is
+    /// treated as straddling an unreported beat. The same 0.5 s as `beatAccuracyToleranceS`, for the same
+    /// reason that constant gives: whole-second timestamps against sub-second intervals. Candidates 0.5,
+    /// 0.75 and 1.0 s were pre-registered and swept on the Fantasia young half in
+    /// `docs/research/results/01-hrv-window-quality.md`; this is the value that sweep selected.
+    public static let pairGapToleranceS: Double = 0.5
+
+    /// Shared body of the two cleaners above: the cleaned values plus each survivor's index in the ORIGINAL
+    /// series, from which either contiguity flag is derived. Kotlin twin: `HrvAnalyzer.cleanRRGapAwareIndexed`.
+    private static func cleanRRGapAwareIndexed(_ rr: [Double]) -> (nn: [Double], orig: [Int]) {
         // Pass 1: range filter, keeping each survivor's index in the ORIGINAL series.
         var rangedIdx: [Int] = []; rangedIdx.reserveCapacity(rr.count)
         var rangedVal: [Double] = []; rangedVal.reserveCapacity(rr.count)
@@ -199,10 +254,66 @@ public enum HRVAnalyzer {
                 if keep { keptOrig.append(rangedIdx[i]); keptVal.append(rangedVal[i]) }
             }
         }
-        // A survivor is contiguous with its predecessor only when their ORIGINAL indices are adjacent.
-        var contiguous: [Bool] = []; contiguous.reserveCapacity(keptVal.count)
-        for i in 0..<keptVal.count { contiguous.append(i > 0 && keptOrig[i] == keptOrig[i - 1] + 1) }
-        return CleanSeries(nn: keptVal, contiguous: contiguous)
+        return (keptVal, keptOrig)
+    }
+
+    // MARK: - Window and night quality tiers (docs/research/01-hrv.md §4.3, §6.2)
+
+    /// How much of a 5-min window's RMSSD can be trusted, from the beats it kept.
+    public enum HrvWindowTier: String, Sendable {
+        /// Too little evidence for a number: fewer than `windowRefusePairs` valid pairs, or more than
+        /// `defaultSpotMaxRejectedFraction` of its beats failed the range/ectopic filters.
+        case refuse
+        /// A number, but from `windowRefusePairs`…`windowFullPairs − 1` pairs, or from a span whose R-R
+        /// covers less than `coveragePlausibleFloor` of its wall clock (beats went unreported inside it).
+        case limited
+        /// At least `windowFullPairs` valid pairs and coverage within the plausible band.
+        case full
+    }
+
+    /// Below this many VALID successive pairs a 5-min window reports no RMSSD. Baek 2015 (n = 467): 30 s is
+    /// the shortest length that reliably estimates 5-min RMSSD; Salahuddin 2007 agrees at 30 s. At sleeping
+    /// heart rates 30 pairs is 30–36 s. Raises the shipped `minBeats` 20 (≈ 20–24 s) to the published floor.
+    public static let windowRefusePairs: Int = 30
+
+    /// From this many valid pairs a window counts as full-quality. Esco & Flatt 2014: 60 s lnRMSSD agrees
+    /// with 5 min at ICC 0.98 (30 s: 0.41 ln LoA half-width, 60 s: 0.22). 50 pairs is 50–60 s asleep.
+    public static let windowFullPairs: Int = 50
+
+    /// Tier of one window from its counts. `coverage` is `rrCoverage` over the window's in-range rows
+    /// (0 when fewer than two beats or no span); a NaN coverage lands on `limited`, never on `full`, by the
+    /// negated-`>=` convention `classifyCoverage` uses. Pure. Byte-parity twin of Kotlin `hrvWindowTier`.
+    public static func hrvWindowTier(validPairs: Int, inputBeats: Int, cleanBeats: Int, coverage: Double) -> HrvWindowTier {
+        let rejectedFraction = inputBeats > 0 ? 1.0 - Double(cleanBeats) / Double(inputBeats) : 1.0
+        if validPairs < windowRefusePairs || rejectedFraction > defaultSpotMaxRejectedFraction { return .refuse }
+        if validPairs < windowFullPairs || !(coverage >= coveragePlausibleFloor) { return .limited }
+        return .full
+    }
+
+    /// How much of a night's HRV can be trusted, from its windows' tiers.
+    public enum HrvNightTier: String, Sendable {
+        /// Fewer than `nightMinWindows` scored windows or fewer than `nightMinPairs` valid pairs: no number.
+        case refuse
+        /// A number, but fewer than `nightFullWindows` full-quality windows behind it. Shown, and not yet
+        /// kept out of baselines: that step waits for the tier distribution on real nights (01-hrv §6.2).
+        case limited
+        /// As today.
+        case normal
+    }
+
+    /// Fewest non-refused windows for a night to report HRV. Engineering choice, pre-registered in
+    /// `docs/research/results/01-hrv-window-quality.md`; no literature constant exists for it.
+    public static let nightMinWindows: Int = 3
+    /// Fewest valid successive pairs across a night's non-refused windows. Pre-registered, as above.
+    public static let nightMinPairs: Int = 150
+    /// Fewest FULL windows (30 min of full-quality data) for the night to be `normal`. Pre-registered.
+    public static let nightFullWindows: Int = 6
+
+    /// Night tier from window counts. Pure. Byte-parity twin of Kotlin `hrvNightTier`.
+    public static func hrvNightTier(usableWindows: Int, fullWindows: Int, validPairs: Int) -> HrvNightTier {
+        if usableWindows < nightMinWindows || validPairs < nightMinPairs { return .refuse }
+        if fullWindows < nightFullWindows { return .limited }
+        return .normal
     }
 
     /// Task Force RMSSD that counts a successive difference only when the two beats were adjacent in the

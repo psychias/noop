@@ -83,10 +83,16 @@ final class AnalyticsEngineTests: XCTestCase {
             hr.append(HRSample(ts: t, bpm: 50))
             grav.append(GravitySample(ts: t, x: 0, y: 0, z: 1))  // still
         }
-        // RR every 2 s at ~1200 ms with tiny oscillation (avoids ectopic rejection).
+        // R-R at ~1200 ms with a tiny oscillation (avoids ectopic rejection), each beat stamped with the
+        // whole second it falls in, the way a strap stamps it. The beats must be TIME-CONSISTENT: a beat
+        // every 2 s carrying a 1.2 s interval reads as a stream missing four beats in ten, and the
+        // wall-clock skip in `sessionHrvWindows` refuses such a night rather than averaging across the gaps.
         var toggle = false
-        for t in stride(from: start, to: end, by: 2) {
-            rr.append(RRInterval(ts: t, rrMs: toggle ? 1205 : 1195))
+        var beatMs = start * 1000
+        while beatMs < end * 1000 {
+            let ms = toggle ? 1205 : 1195
+            beatMs += ms
+            rr.append(RRInterval(ts: beatMs / 1000, rrMs: ms))
             toggle.toggle()
         }
         return (start, end, hr, rr, grav)

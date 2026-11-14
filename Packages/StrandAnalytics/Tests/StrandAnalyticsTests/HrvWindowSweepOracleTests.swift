@@ -29,14 +29,22 @@ final class HrvWindowSweepOracleTests: XCTestCase {
         var t = start
         repeat {
             let isFinal = t + windowS >= end
-            let bucket = seg.filter { $0.ts >= t && (isFinal || $0.ts < t + windowS) }.map { Double($0.rrMs) }
-            let cleaned = HRVAnalyzer.cleanRRGapAware(bucket)
-            let rmssd: Double? = (cleaned.nn.count >= HRVAnalyzer.minBeats)
-                ? HRVAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous) : nil
+            let rows = seg.filter { $0.ts >= t && (isFinal || $0.ts < t + windowS) }
+            let bucket = rows.map { Double($0.rrMs) }
+            // The per-window quality step (ts-aware cleaning, valid pairs, in-range coverage, tier) is the
+            // SAME production primitives applied to the naive bucket, so what this oracle pins is the
+            // bucketing: which rows reach which window.
+            let cleaned = HRVAnalyzer.cleanRRTimeAware(rrMs: bucket, tsSec: rows.map { $0.ts })
+            let validPairs = cleaned.contiguous.filter { $0 }.count
+            let inRange = rows.filter { Double($0.rrMs) >= HRVAnalyzer.rrMinMs && Double($0.rrMs) <= HRVAnalyzer.rrMaxMs }
+            let coverage = HRVAnalyzer.rrCoverage(tsSec: inRange.map { $0.ts }, rrMs: inRange.map { Double($0.rrMs) })
+            let tier = HRVAnalyzer.hrvWindowTier(validPairs: validPairs, inputBeats: rows.count,
+                                                 cleanBeats: cleaned.nn.count, coverage: coverage)
+            let rmssd: Double? = tier == .refuse ? nil : HRVAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous)
             let center = t + windowS / 2
             let stage = stages.first { center >= $0.start && center < $0.end }?.stage ?? "?"
-            out.append(SleepStager.HrvWindow(startTs: t, stage: stage,
-                                             cleanBeats: cleaned.nn.count, rmssd: rmssd))
+            out.append(SleepStager.HrvWindow(startTs: t, stage: stage, cleanBeats: cleaned.nn.count, rmssd: rmssd,
+                                             inputBeats: rows.count, validPairs: validPairs, coverage: coverage, tier: tier))
             t += windowS
         } while t < end
         return out
@@ -52,6 +60,10 @@ final class HrvWindowSweepOracleTests: XCTestCase {
             XCTAssertEqual(x.startTs, y.startTs, "\(label) w\(k) startTs", file: file, line: line)
             XCTAssertEqual(x.stage, y.stage, "\(label) w\(k) stage", file: file, line: line)
             XCTAssertEqual(x.cleanBeats, y.cleanBeats, "\(label) w\(k) cleanBeats", file: file, line: line)
+            XCTAssertEqual(x.inputBeats, y.inputBeats, "\(label) w\(k) inputBeats", file: file, line: line)
+            XCTAssertEqual(x.validPairs, y.validPairs, "\(label) w\(k) validPairs", file: file, line: line)
+            XCTAssertEqual(x.coverage, y.coverage, "\(label) w\(k) coverage", file: file, line: line)
+            XCTAssertEqual(x.tier, y.tier, "\(label) w\(k) tier", file: file, line: line)
             switch (x.rmssd, y.rmssd) {
             case (nil, nil): break
             // EXACT, not a tolerance. Both sides run the same HRVAnalyzer over the same bucket, so identical

@@ -123,6 +123,11 @@ public enum AnalyticsEngine {
         /// refused-main-night HRV rule use; empty when the day has no main night. Exposed so the `hrv diag`
         /// line can describe the night the #1118 gate actually judged instead of re-deriving it (#2425).
         public let mainNightBlocks: [SleepStageTotals.NightBlock]
+        /// The main night's HRV quality (`SleepStager.hrvNightQuality` over every window of the main-night
+        /// group), or nil when the day has no main night. Carries the tier the `hrv day=` line logs and the
+        /// `hrv_tier` / `hrv_full_windows` / `hrv_valid_pairs` metric points persist, so that the log, the
+        /// stored tier and the gate inside `sessionAvgHRV` all read one fold of the same windows.
+        public let hrvNightQuality: SleepStager.HrvNightQuality?
 
         public init(daily: DailyMetric, sleepSessions: [SleepSession],
                     cachedSleep: [CachedSleepSession], workouts: [ExerciseSession],
@@ -136,9 +141,11 @@ public enum AnalyticsEngine {
                     chargeDrivers: [ChargeDriver] = [],
                     skinTempRelative: SkinTempRelative? = nil,
                     detectionFunnel: WorkoutDetector.DetectionFunnel? = nil,
-                    mainNightBlocks: [SleepStageTotals.NightBlock] = []) {
+                    mainNightBlocks: [SleepStageTotals.NightBlock] = [],
+                    hrvNightQuality: SleepStager.HrvNightQuality? = nil) {
             self.daily = daily; self.sleepSessions = sleepSessions
             self.mainNightBlocks = mainNightBlocks
+            self.hrvNightQuality = hrvNightQuality
             self.cachedSleep = cachedSleep; self.workouts = workouts
             self.detectionFunnel = detectionFunnel
             self.recovery = recovery; self.strain = strain
@@ -760,6 +767,29 @@ public enum AnalyticsEngine {
         let providedPrimaryRHR = primarySession
             .flatMap { p in providedSleep.first(where: { $0.start == p.start && $0.end == p.end })?.restingHR }
         let restingHRDaily: Int? = providedPrimaryRHR ?? primarySession?.restingHR
+        // The main night's HRV quality, folded ONCE over every window of the main-night group and read by the
+        // refused-main-night rule below, the `hrv day=` line and the persisted `hrv_tier` points. Per-session
+        // tiers are kept beside it because `sessionAvgHRV` gates per SESSION, and a bridged night's short
+        // fragment can be refused on its own while the group as a whole is fine. nil when there is no main
+        // night. Sorted once here (RMSSD is built from successive differences; `sessionHrvWindows` requires it).
+        let mainNightHrvQuality: SleepStager.HrvNightQuality?
+        let mainSessionHrvTier: [Int: HRVAnalyzer.HrvNightTier]
+        if mainGroup.isEmpty {
+            mainNightHrvQuality = nil
+            mainSessionHrvTier = [:]
+        } else {
+            let rrSorted = rr.sortedByTsStable()
+            var windows: [SleepStager.HrvWindow] = []
+            var tiers: [Int: HRVAnalyzer.HrvNightTier] = [:]
+            for s in mainGroup {
+                let w = SleepStager.sessionHrvWindows(start: s.start, end: s.end, rr: rrSorted, stages: [])
+                tiers[s.start] = SleepStager.hrvNightQuality(w).tier
+                windows.append(contentsOf: w)
+            }
+            mainNightHrvQuality = SleepStager.hrvNightQuality(windows)
+            mainSessionHrvTier = tiers
+        }
+
         // Daily avg HRV = in-bed-weighted mean of per-session avg HRV.
         let avgHRVDaily: Double? = {
             if deepHrvWindow {
@@ -782,9 +812,14 @@ public enum AnalyticsEngine {
             // night. So when a main-group session's HRV is nil BECAUSE the gate refused it, only the main
             // group is pooled, and the day holds (nil) unless another fragment of that night measured
             // cleanly. A main night that simply banked no R-R is not refused, so #1884's fill-in from the
-            // day's other sessions is unchanged. Byte-parity twin of Kotlin `avgHRVDaily`.
+            // day's other sessions is unchanged. The quality tier refuses the same way: a main night whose
+            // windows banked R-R but not enough valid pairs for a number (`HrvNightTier.refuse`) must not
+            // hand the day to a nap either; a night with no R-R rows at all (`inputBeats == 0`) is "never
+            // measured" and keeps the fill-in. Byte-parity twin of Kotlin `avgHRVDaily`.
             let mainNightRefused = mainGroup.contains { s in
-                s.avgHRV == nil && SleepStager.sessionHrvOverCounted(start: s.start, end: s.end, rr: rr)
+                s.avgHRV == nil
+                    && (SleepStager.sessionHrvOverCounted(start: s.start, end: s.end, rr: rr)
+                        || (mainSessionHrvTier[s.start] == .refuse && (mainNightHrvQuality?.inputBeats ?? 0) > 0))
             }
             let hrvPool = mainNightRefused
                 ? physiologySessions.filter { p in mainGroup.contains { $0.start == p.start && $0.end == p.end } }
@@ -863,13 +898,33 @@ public enum AnalyticsEngine {
             // NOT in deep-window mode. That branch re-derives from `sessionHrvWindows` and never reads
             // `s.avgHRV`, so the gate plays no part in its nil and naming it would be a diagnostic
             // asserting a cause it did not verify. `nDeep` on this same line already explains that case.
-            let refused = !deepHrvWindow && avgHRVDaily == nil && !withR.isEmpty
+            //
+            // Two gates can now make that nil, and the line names which, because a diagnostic may only
+            // assert what it can attribute: `overCount` is `sessionHrvOverCounted` on a session that had
+            // windows with an RMSSD; `tier` is a session whose own `HrvNightTier` is `refuse`. Both can hold.
+            let overCountRefused = !deepHrvWindow && avgHRVDaily == nil && !withR.isEmpty
                 && physiologySessions.contains { s in
                     SleepStager.sessionHrvWindows(start: s.start, end: s.end, rr: rrSorted, stages: [])
                         .contains { $0.rmssd != nil }
-                        && SleepStager.sessionAvgHRV(start: s.start, end: s.end, rr: rrSorted) == nil
+                        && SleepStager.sessionHrvOverCounted(start: s.start, end: s.end, rr: rrSorted)
                 }
-            hrvTraceSink("hrv nightSummary reported=\(reported) \(refused ? "refused=overCount " : "")wholeNight=\(meanMs(withR)) deepOnly=\(meanMs(deepW)) lastSWS=\(meanMs(lastSws)) nWin=\(withR.count) nDeep=\(deepW.count)")
+            let tierRefused = !deepHrvWindow && avgHRVDaily == nil
+                && physiologySessions.contains { s in
+                    SleepStager.sessionHrvQuality(start: s.start, end: s.end, rr: rrSorted).tier == .refuse
+                        && SleepStager.sessionHrvQuality(start: s.start, end: s.end, rr: rrSorted).inputBeats > 0
+                }
+            let refusedField: String
+            switch (overCountRefused, tierRefused) {
+            case (true, true): refusedField = "refused=overCount+tier "
+            case (true, false): refusedField = "refused=overCount "
+            case (false, true): refusedField = "refused=tier "
+            case (false, false): refusedField = ""
+            }
+            // The main night's tier and window counts (full/limited/refused) and valid pairs, from the same
+            // fold the `hrv day=` line and the stored `hrv_tier` read. `tier=none` when the day has no main night.
+            let q = mainNightHrvQuality
+            let tierField = q.map { "tier=\($0.tier.rawValue) win=\($0.fullWindows)/\($0.limitedWindows)/\($0.refusedWindows) pairs=\($0.validPairs)" } ?? "tier=none"
+            hrvTraceSink("hrv nightSummary reported=\(reported) \(refusedField)wholeNight=\(meanMs(withR)) deepOnly=\(meanMs(deepW)) lastSWS=\(meanMs(lastSws)) nWin=\(withR.count) nDeep=\(deepW.count) \(tierField)")
         }
 
         // Nightly APPROXIMATE respiratory rate (breaths/min) from the R-R stream via
@@ -1166,7 +1221,8 @@ public enum AnalyticsEngine {
                          chargeDrivers: chargeDrivers,
                          skinTempRelative: skinTempRelative,
                          detectionFunnel: detectionFunnel,
-                         mainNightBlocks: mainGroup.map { SleepStageTotals.NightBlock(start: $0.start, end: $0.end) })
+                         mainNightBlocks: mainGroup.map { SleepStageTotals.NightBlock(start: $0.start, end: $0.end) },
+                         hrvNightQuality: mainNightHrvQuality)
     }
 
     /// The R-R rows the always-on `hrv diag` line describes (#2425). Pure. Byte-parity twin of Kotlin
