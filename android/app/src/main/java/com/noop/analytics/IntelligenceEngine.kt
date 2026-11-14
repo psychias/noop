@@ -1718,6 +1718,20 @@ object IntelligenceEngine {
             hrvOverCountByDay[daily.day]?.let { oc ->
                 restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "hrv_rr_overcount", value = if (oc) 1.0 else 0.0))
             }
+            // 1.1: persist the main night's HRV quality tier (0 refuse / 1 limited / 2 normal) with the two
+            // counts behind it, under the "-noop" computed ID like the over-count flag above. Instrumentation
+            // for now — nothing reads these yet; they exist so the tier distribution across real nights can be
+            // measured from exports before `limited` is allowed to change which nights seed a baseline.
+            res.hrvNightQuality?.let { q ->
+                val tierCode = when (q.tier) {
+                    HrvAnalyzer.HrvNightTier.REFUSE -> 0.0
+                    HrvAnalyzer.HrvNightTier.LIMITED -> 1.0
+                    HrvAnalyzer.HrvNightTier.NORMAL -> 2.0
+                }
+                restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "hrv_tier", value = tierCode))
+                restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "hrv_full_windows", value = q.fullWindows.toDouble()))
+                restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "hrv_valid_pairs", value = q.validPairs.toDouble()))
+            }
             // #1169 shadow metric: the primary-session mean RHR, stored beside the shipped floor
             // (daily.restingHr) under the "-noop" computed ID. Instrumentation only — never shown, never
             // scored — for later mean-vs-floor evaluation from exports.
@@ -1776,8 +1790,16 @@ object IntelligenceEngine {
             // from the strap log — the whole-night vs deep-sleep value, and `avgHrv=nil window=deep` when a
             // deep-window night has no detected deep sleep — without needing the HRV & Autonomic test mode.
             // Counts-only (a rounded ms + the window), PII-free; byte-identical to the Swift line.
+            // 1.1: the main night's quality tier beside the value — `tier=normal|limited|refuse`, the
+            // full/limited/refused window counts and the valid pairs the night was built from — so the tier
+            // distribution on real nights is readable from the strap log before any tier is allowed to decide
+            // what seeds a baseline (docs/research/01-hrv.md §6.2). Omitted when the day has no main night.
+            // Same fold `AnalyticsEngine` gated on; byte-identical to the Swift line.
             val hrvLog = daily.avgHrv?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "nil"
-            diag("hrv day=${daily.day} window=${if (deepHrvWindow) "deep" else "whole"} avgHrv=$hrvLog")
+            val hrvTierLog = res.hrvNightQuality?.let {
+                " tier=${it.tier.raw} win=${it.fullWindows}/${it.limitedWindows}/${it.refusedWindows} pairs=${it.validPairs}"
+            } ?: ""
+            diag("hrv day=${daily.day} window=${if (deepHrvWindow) "deep" else "whole"} avgHrv=$hrvLog$hrvTierLog")
             // ── CAPTURE-B: universal dayOwner self-diagnostic (#814/#799) ────────────────────────────────
             // ONE line per SCORED day, tagged .universal so it rides EVERY Test Centre export regardless of
             // which mode is on. It pins the read/write split #814 is about: readId is the owner this day was

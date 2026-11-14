@@ -939,7 +939,9 @@ final class IntelligenceEngine: ObservableObject {
                             hrvDiag: String?,
                             // #1545: carried beside `workouts` because it explains the times that list is
                             // EMPTY, and the emit happens in the main-actor loop below, not here.
-                            detectionFunnel: WorkoutDetector.DetectionFunnel?)] = []   // #195: carried from loop 1
+                            detectionFunnel: WorkoutDetector.DetectionFunnel?,
+                            // 1.1: the main night's HRV quality, for the `hrv day=` line and the stored tier.
+                            hrvNightQuality: SleepStager.HrvNightQuality?)] = []   // #195: carried from loop 1
         // Nightly values harvested in pass 1, keyed by day, to seed the pass-2 baseline.
         var nightlyHrvByDay: [String: Double?] = [:]
         var nightlyRhrByDay: [String: Double?] = [:]
@@ -1976,7 +1978,8 @@ final class IntelligenceEngine: ObservableObject {
                                  sessionMotion: res.sessionMotionByStart,
                                  sessionSleepState: res.sessionSleepStateByStart,
                                  hrvDiag: scan.hrvDiag,
-                                 detectionFunnel: res.detectionFunnel))
+                                 detectionFunnel: res.detectionFunnel,
+                                 hrvNightQuality: res.hrvNightQuality))
         }
 
         markPostLoopPhase("dayReplay")
@@ -2279,8 +2282,16 @@ final class IntelligenceEngine: ObservableObject {
             // from the strap log — the whole-night vs deep-sleep value, and `avgHrv=nil window=deep` when a
             // deep-window night has no detected deep sleep — without needing the HRV & Autonomic test mode.
             // Counts-only (a rounded ms + the window), PII-free; byte-identical to the Kotlin line.
+            // 1.1: the main night's quality tier beside the value — `tier=normal|limited|refuse`, the
+            // full/limited/refused window counts and the valid pairs the night was built from — so the tier
+            // distribution on real nights is readable from the strap log before any tier is allowed to decide
+            // what seeds a baseline (docs/research/01-hrv.md §6.2). Omitted when the day has no main night.
+            // Same fold `AnalyticsEngine` gated on; byte-identical to the Kotlin line.
             let hrvLog = daily.avgHrv.map { String(format: "%.1f", $0) } ?? "nil"
-            diagnosticSink?("hrv day=\(daily.day) window=\(deepHrvWindow ? "deep" : "whole") avgHrv=\(hrvLog)", nil)
+            let hrvTierLog = night.hrvNightQuality.map {
+                " tier=\($0.tier.rawValue) win=\($0.fullWindows)/\($0.limitedWindows)/\($0.refusedWindows) pairs=\($0.validPairs)"
+            } ?? ""
+            diagnosticSink?("hrv day=\(daily.day) window=\(deepHrvWindow ? "deep" : "whole") avgHrv=\(hrvLog)\(hrvTierLog)", nil)
             // #195: the whole-night HRV cleaning summary built in loop 1 (rmssd vs sdnn / cleaning counts).
             // #1008: on an over-count night this carries a second `hrv rrsample …` line, \n-joined at the
             // build site; split it back into one diagnosticSink call per line so each is its own log line.
@@ -2332,6 +2343,21 @@ final class IntelligenceEngine: ObservableObject {
             // (not just absent) so a night that flips clean on re-score clears its prior flag.
             if let oc = hrvOverCountByDay[daily.day] {
                 restPoints.append(MetricPoint(day: daily.day, key: "hrv_rr_overcount", value: oc ? 1.0 : 0.0))
+            }
+            // 1.1: persist the main night's HRV quality tier (0 refuse / 1 limited / 2 normal) with the two
+            // counts behind it, under the "-noop" computed ID like the over-count flag above. Instrumentation
+            // for now — nothing reads these yet; they exist so the tier distribution across real nights can be
+            // measured from exports before `limited` is allowed to change which nights seed a baseline.
+            if let q = night.hrvNightQuality {
+                let tierCode: Double
+                switch q.tier {
+                case .refuse: tierCode = 0
+                case .limited: tierCode = 1
+                case .normal: tierCode = 2
+                }
+                restPoints.append(MetricPoint(day: daily.day, key: "hrv_tier", value: tierCode))
+                restPoints.append(MetricPoint(day: daily.day, key: "hrv_full_windows", value: Double(q.fullWindows)))
+                restPoints.append(MetricPoint(day: daily.day, key: "hrv_valid_pairs", value: Double(q.validPairs)))
             }
             // #1169 shadow metric: the primary-session mean RHR, stored beside the shipped floor
             // (daily.restingHr) under the "-noop" computed ID. Instrumentation only — never shown, never
