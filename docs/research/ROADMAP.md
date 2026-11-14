@@ -314,3 +314,14 @@ Stated plainly, with the topic that establishes it:
 - `.gitignore`: `research-data/` added.
 - `RESEARCH_BRIEF.md` at the repo root (untracked; not for upstream).
 - Nothing committed yet; no source code touched; no protocol or BLE files read for modification.
+
+### Phase 3 progress (one item at a time, results under `docs/research/results/`)
+
+- **Tier 0** (2026-11-12): `Tools/research-data` (manifest + verified fetch of Fantasia and slpdb into the
+  git-ignored `research-data/`), `Tools/MetricsBench` (WFDB reader, WHOOP 5.0 sparsity simulator, `hrv`
+  and `resp` benches over the shipped estimators), baselines in `results/00-tier0-baselines.md`.
+- **1.1** (2026-11-14): wall-clock pair skip (`HRVAnalyzer.cleanRRTimeAware`), window tiers at 30 / 50
+  valid pairs and in-span coverage 0.90, night tiers at 3 windows / 150 pairs / 6 full windows, tier logged
+  and stored as `hrv_tier` metric points, Swift + Kotlin with one shared oracle literal. Random 30 %
+  beat deletion: +13 % → within ±1 % on both splits; cost on a complete stream −0.7 % (−0.3 ms).
+  `limited` is logged, not yet acted on. Results: `results/01-hrv-window-quality.md`.

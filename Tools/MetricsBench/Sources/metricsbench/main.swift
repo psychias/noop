@@ -32,7 +32,8 @@ func usage() -> Never {
 
       selfcheck   dataset-free checks of the WFDB reader, the sparsity simulator, the statistics and the
                   direction tracking of the shipped estimators (what `swift test` runs).
-      hrv         5-min RMSSD windows and night means, sparse vs dense, by valid-pair bucket; deletion Monte Carlo.
+      hrv         5-min RMSSD windows and night means, sparse vs dense: shipped 1.1 tiers vs the pre-1.1 replica,
+                  window/night tier distributions, honest-stream pair loss, deletion Monte Carlo, gap-tolerance sweep.
       resp        RSA respiratory rate vs the respiration waveform, per window and per record; false-emit;
                   synthetic direction tracking.
     """)

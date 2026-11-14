@@ -197,26 +197,50 @@ enum SelfCheck {
 
     static func hrvWindows() -> [Check] {
         var out: [Check] = []
-        // 20 minutes of RSA-modulated beats at 60 bpm: four 5-min windows, each with ≥ minBeats clean beats.
+        // 20 minutes of RSA-modulated beats at 60 bpm: four 5-min windows, each full-quality.
         let rows = SyntheticRSA.rows(breathsPerMin: 12, amplitudeMs: 40, meanRRMs: 1000, minutes: 20)
         let w = SleepStager.sessionHrvWindows(start: rows.first!.ts, end: rows.last!.ts, rr: rows, stages: [])
-        out.append(Check(name: "sessionHrvWindows: 4 windows, all scored", ok: w.count == 4 && w.allSatisfy { $0.rmssd != nil && $0.cleanBeats >= HRVAnalyzer.minBeats }, detail: "\(w.map { $0.cleanBeats })"))
-        // Whole-second stamping against a 0.5 s tolerance: a pair fails whenever the floor() of two beats
-        // about 1 s apart lands them 0 or 2 seconds apart, which happens with probability ≈ |1 − RR| per
-        // pair on a PERFECT stream (≈ 4–8 % here at 1000 ± 40 ms). That is a property of the shipped
-        // definition (`HRVAnalyzer.beatAccurateFraction`), not of this harness, and it is why the bench also
-        // reports window COVERAGE (Σ RR vs wall span), where rounding does not accumulate but a lost beat does.
-        let vp = HRVBench.validPairs(rows[...])
-        out.append(Check(name: "validPairs on a perfect whole-second stream loses only rounding pairs", ok: vp >= Int(0.85 * Double(rows.count)) && vp <= rows.count - 1, detail: "\(vp) of \(rows.count)"))
-        let cov = HRVBench.coverage(rows[...])
-        out.append(Check(name: "coverage ≈ 1 on a perfect stream, < 1 with a third of beats gone", ok: abs(cov - 1) < 0.03 && HRVBench.coverage(rows.enumerated().compactMap { $0.offset % 3 == 2 ? nil : $0.element }[...]) < 0.75, detail: String(format: "%.3f", cov)))
-        // Banked timestamps (all beats stamped on one second) → almost no valid pairs.
-        let banked = rows.map { RRInterval(ts: rows[0].ts, rrMs: $0.rrMs) }
-        out.append(Check(name: "validPairs collapses on banked timestamps", ok: HRVBench.validPairs(banked[...]) < rows.count / 10, detail: "\(HRVBench.validPairs(banked[...]))"))
-        // Removing every third beat drops the valid-pair count by about a third of the remaining pairs.
+        out.append(Check(name: "sessionHrvWindows: 4 windows, all full", ok: w.count == 4 && w.allSatisfy { $0.rmssd != nil && $0.tier == .full }, detail: "\(w.map { $0.tier.rawValue })"))
+        // Whole-second stamping: an honest pair is skipped only when its R-R's sub-second part is below the
+        // tolerance, with that probability, so a perfect 1000 ± 40 ms stream keeps nearly every pair over the
+        // long run. Per WINDOW the losses cluster: at a mean R-R of exactly 1.000 s the beat phase barely
+        // drifts, and while it sits just below a second boundary every RSA cycle crosses it once (a skip per
+        // breath). Pooled over 20 minutes the kept fraction is what the rule predicts.
+        let kept = w.map { Double($0.validPairs) / Double(max(1, $0.cleanBeats - 1)) }
+        let pooled = Double(w.reduce(0) { $0 + $1.validPairs }) / Double(max(1, w.reduce(0) { $0 + max(0, $1.cleanBeats - 1) }))
+        out.append(Check(name: "validPairs keeps ≥ 90 % of an honest stream's pairs (pooled; per-window losses cluster)", ok: pooled >= 0.90 && kept.allSatisfy { $0 >= 0.80 }, detail: String(format: "pooled %.3f; per window ", pooled) + kept.map { String(format: "%.3f", $0) }.joined(separator: " ")))
+        out.append(Check(name: "coverage ≈ 1 on a perfect stream", ok: w.allSatisfy { abs($0.coverage - 1) < 0.03 }, detail: w.map { String(format: "%.3f", $0.coverage) }.joined(separator: " ")))
+        // Every other beat gone: every surviving pair straddles a lost beat, the wall clock says so, and the
+        // window has nothing to average — refuse, not a number built from two-beat differences.
+        let half = rows.enumerated().compactMap { $0.offset % 2 == 1 ? nil : $0.element }
+        let wHalf = SleepStager.sessionHrvWindows(start: rows.first!.ts, end: rows.last!.ts, rr: half, stages: [])
+        out.append(Check(name: "every-other-beat loss refuses every window", ok: wHalf.allSatisfy { $0.tier == .refuse && $0.rmssd == nil }, detail: "\(wHalf.map { $0.validPairs })"))
+        // Every third beat gone: two thirds of the pairs stay valid, coverage drops to ≈ 0.67 → limited.
         let thinned = rows.enumerated().compactMap { $0.offset % 3 == 2 ? nil : $0.element }
-        let vpThin = HRVBench.validPairs(thinned[...])
-        out.append(Check(name: "validPairs sees deletions", ok: Double(vpThin) < 0.6 * Double(thinned.count), detail: "\(vpThin) of \(thinned.count)"))
+        let wThin = SleepStager.sessionHrvWindows(start: rows.first!.ts, end: rows.last!.ts, rr: thinned, stages: [])
+        out.append(Check(name: "every-third-beat loss is limited (coverage < 0.75, pairs skipped)", ok: wThin.allSatisfy { $0.tier == .limited && $0.coverage < 0.75 && Double($0.validPairs) < 0.6 * Double($0.cleanBeats) }, detail: wThin.map { String(format: "%.2f/%d", $0.coverage, $0.validPairs) }.joined(separator: " ")))
+        // Banked timestamps (all beats stamped on one second): the gaps are too SMALL, which the one-sided
+        // rule accepts, but coverage is 0 (no span) → limited, never full.
+        let banked = rows.map { RRInterval(ts: rows[0].ts, rrMs: $0.rrMs) }
+        let wBank = SleepStager.sessionHrvWindows(start: rows.first!.ts, end: rows.last!.ts, rr: banked, stages: [])
+        out.append(Check(name: "banked timestamps → limited", ok: wBank.first?.tier == .limited && wBank.first?.coverage == 0, detail: "\(wBank.map { $0.tier.rawValue })"))
+        // Night tier: 4 full windows is `limited` (< 6 full), 8 is `normal`; 2 windows refuse.
+        let q20 = SleepStager.hrvNightQuality(w)
+        let rows40 = SyntheticRSA.rows(breathsPerMin: 12, amplitudeMs: 40, meanRRMs: 1000, minutes: 40)
+        let q40 = SleepStager.sessionHrvQuality(start: rows40.first!.ts, end: rows40.last!.ts, rr: rows40)
+        let q10 = SleepStager.sessionHrvQuality(start: rows.first!.ts, end: rows.first!.ts + 600, rr: rows)
+        out.append(Check(name: "night tier: 4 full → limited, 8 full → normal, 2 windows → refuse", ok: q20.tier == .limited && q40.tier == .normal && q10.tier == .refuse, detail: "\(q20.tier.rawValue) \(q40.tier.rawValue) \(q10.tier.rawValue)"))
+        out.append(Check(name: "sessionAvgHRV follows the night tier", ok: SleepStager.sessionAvgHRV(start: rows.first!.ts, end: rows.first!.ts + 600, rr: rows) == nil && SleepStager.sessionAvgHRV(start: rows40.first!.ts, end: rows40.last!.ts, rr: rows40) != nil, detail: ""))
+        // Boundaries of the pure tier functions.
+        let tier = HRVAnalyzer.hrvWindowTier
+        out.append(Check(name: "hrvWindowTier boundaries", ok: tier(29, 40, 40, 1.0) == .refuse && tier(30, 40, 40, 1.0) == .limited && tier(50, 60, 60, 1.0) == .full
+                         && tier(50, 60, 60, 0.89) == .limited && tier(50, 60, 60, .nan) == .limited && tier(60, 100, 64, 1.0) == .refuse, detail: ""))
+        out.append(Check(name: "hrvNightTier boundaries", ok: HRVAnalyzer.hrvNightTier(usableWindows: 2, fullWindows: 2, validPairs: 1000) == .refuse
+                         && HRVAnalyzer.hrvNightTier(usableWindows: 3, fullWindows: 3, validPairs: 149) == .refuse
+                         && HRVAnalyzer.hrvNightTier(usableWindows: 3, fullWindows: 5, validPairs: 150) == .limited
+                         && HRVAnalyzer.hrvNightTier(usableWindows: 6, fullWindows: 6, validPairs: 150) == .normal, detail: ""))
+        out.append(Check(name: "pairIsTimeConsistent is one-sided", ok: HRVAnalyzer.pairIsTimeConsistent(gapS: 0, rrMs: 1000) && HRVAnalyzer.pairIsTimeConsistent(gapS: 1, rrMs: 900)
+                         && HRVAnalyzer.pairIsTimeConsistent(gapS: 1, rrMs: 500) && !HRVAnalyzer.pairIsTimeConsistent(gapS: 2, rrMs: 1000) && !HRVAnalyzer.pairIsTimeConsistent(gapS: 1, rrMs: 499), detail: ""))
         return out
     }
 }

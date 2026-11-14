@@ -46,12 +46,15 @@ above about 20 breaths/min resolve coarsely. When 1.2 lands those checks are inv
 
 ## What the reports contain
 
-**`hrv`.** The reference is the shipped function over the dense NN rows of each record (ECG beat
-annotations, whole-second `ts`). Each regime (`cap4`, `cap4+holes10%+fillers`, …) is scored per window
-and per night against it, bucketed by the harness's valid-pair count and by window coverage (Σ RR over
-the wall-clock span, the quantity `HRVAnalyzer.rrCoverage` uses), followed by what a valid-pair floor of
-20 / 30 / 50 would keep and how far the kept windows sit from the dense night, and the Kim 2007
-random-deletion Monte Carlo.
+**`hrv`.** The reference is the pre-1.1 window rule (kept verbatim as `HRVBench.legacyWindows`) over the
+dense NN rows of each record (ECG beat annotations, whole-second `ts`), so before and after are paired on
+identical input. Each regime (`cap4`, `cap4+holes10%+fillers`, …) is scored per night — shipped code
+beside the legacy replica — and per window by the shipped tier (`full` / `limited` / `refused`, with
+what the legacy code reported for the windows 1.1 refuses); then the night-tier distribution, the pair
+loss the wall-clock skip costs an honest stream by mean R-R, the Kim 2007 random-deletion Monte Carlo
+(legacy vs shipped), the pre-registered gap-tolerance sweep (0.5 / 0.75 / 1.0 s) and the night error by
+the counts the night tier reads. Fantasia young is the fit split, Fantasia elderly + slpdb the hold-out.
+Results and their reading: `docs/research/results/01-hrv-window-quality.md`.
 
 **`resp`.** The reference breathing rate is read from the record's respiration waveform twice per
 5-minute window — hysteresis-crossing breath count and dominant spectral frequency — and the window is
