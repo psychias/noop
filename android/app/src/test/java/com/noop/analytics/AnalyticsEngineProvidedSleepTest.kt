@@ -22,11 +22,22 @@ class AnalyticsEngineProvidedSleepTest {
     private val dayStart = LocalDate.parse("2026-07-27").atStartOfDay(ZoneOffset.UTC).toEpochSecond()
     private val day = "2026-07-27"
 
-    /** hr (30 s) + rr (2 s, varied so RMSSD is computable) over [start, end), NO gravity. */
+    /**
+     * hr (30 s) + rr (~1.1 s, varied so RMSSD is computable) over [start, end), NO gravity. Each beat is
+     * stamped with the whole second it falls in (time-consistent, as a strap stamps them): a 1.1 s beat every
+     * 2 s would read as a stream missing nearly half its beats and be refused. Twin of the Swift fixture.
+     */
     private fun nightStreams(start: Long, end: Long): Pair<List<HrSample>, List<RrInterval>> {
         val hr = (start until end step 30).map { HrSample("t", it, 52 + ((it / 300) % 4).toInt()) }
+        val rr = ArrayList<RrInterval>()
         var i = 0
-        val rr = (start until end step 2).map { RrInterval("t", it, 1080 + (i++ % 6) * 8) }
+        var beatMs = start * 1000
+        while (beatMs < end * 1000) {
+            val ms = 1080 + (i % 6) * 8
+            beatMs += ms
+            rr.add(RrInterval("t", beatMs / 1000, ms))
+            i++
+        }
         return hr to rr
     }
 

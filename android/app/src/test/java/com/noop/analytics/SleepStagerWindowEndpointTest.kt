@@ -168,18 +168,18 @@ class SleepStagerWindowEndpointTest {
 
     @Test
     fun alignedEndpointBeatsFillTheFinalHrvWindow() {
-        // 120 beats in the opening window plus 25 beats exactly on an aligned end = 600 (enough to clear
-        // the MIN_BEATS floor). The second window is the final one, so it closes on `end` and holds them; before
-        // the fix it was emitted empty and its RMSSD was null. Constant 900 ms RR keeps the RMSSD
-        // analytically 0.0 on both platforms — this pins the BINNING, not the RMSSD math.
+        // 120 beats in the opening window plus 35 beats exactly on an aligned end = 600 (34 valid pairs,
+        // enough to clear the WINDOW_REFUSE_PAIRS floor). The second window is the final one, so it closes on
+        // `end` and holds them; before the fix it was emitted empty and its RMSSD was null. Constant 900 ms RR
+        // keeps the RMSSD analytically 0.0 on both platforms — this pins the BINNING, not the RMSSD math.
         val beats = ArrayList<RrInterval>()
         for (i in 0 until 120) beats.add(rr(i.toLong(), 900))
-        for (i in 0 until 25) beats.add(rr(600L, 900))
+        for (i in 0 until 35) beats.add(rr(600L, 900))
         val wins = SleepStager.sessionHrvWindows(0L, 600L, beats, emptyList())
         assertEquals(listOf(0L, 300L), wins.map { it.startTs })
         assertEquals(
             "the endpoint beats must fill the final window",
-            listOf(120, 25), wins.map { it.cleanBeats }
+            listOf(120, 35), wins.map { it.cleanBeats }
         )
         assertEquals(listOf(0.0, 0.0), wins.map { it.rmssd })
     }
@@ -197,32 +197,71 @@ class SleepStagerWindowEndpointTest {
     }
 
     @Test
-    fun sessionAvgHrvZeroLengthWindowUsesTheEndpointBeats() {
-        // The value-level consequence: a zero-length window (start == end) is one closed bin, so
-        // beats admitted by the prefilter produce a number instead of null.
-        val beats = (0 until 25).map { rr(1000L, 900) }
-        assertEquals(0.0, SleepStager.sessionAvgHRV(1000L, 1000L, beats)!!, 1e-9)
+    fun hrvWindowsZeroLengthWindowUsesTheEndpointBeats() {
+        // The window-level consequence: a zero-length window (start == end) is one closed bin, so beats
+        // admitted by the prefilter produce a window with a number instead of null. The NIGHT built from it is
+        // refused on purpose — one window is below HrvAnalyzer.NIGHT_MIN_WINDOWS — so the value-level call
+        // returns null for a different, documented reason. Twin of Swift
+        // testSessionHrvWindowsZeroLengthWindowUsesTheEndpointBeats.
+        val beats = (0 until 35).map { rr(1000L, 900) }
+        val wins = SleepStager.sessionHrvWindows(1000L, 1000L, beats, emptyList())
+        assertEquals(listOf(35), wins.map { it.cleanBeats })
+        assertEquals(listOf(0.0), wins.map { it.rmssd })
+        assertNull("a one-window session is below the night's minimum and reports nothing",
+            SleepStager.sessionAvgHRV(1000L, 1000L, beats))
     }
 
     @Test
-    fun hrvWindowNeedsMinBeatsCleanIntervals() {
-        // A window emits an RMSSD only with HrvAnalyzer.MIN_BEATS (20) clean intervals: 19 is null, 20 is a
-        // value. Before the floor a window needed just 2, and weighed as much as a full one in the mean.
+    fun hrvWindowNeedsWindowRefusePairsValidPairs() {
+        // A window emits an RMSSD only with HrvAnalyzer.WINDOW_REFUSE_PAIRS (30) valid successive pairs, i.e.
+        // 31 clean, time-consistent beats: 30 beats is null, 31 is a value. The floor used to be 20 clean
+        // beats; Baek 2015 puts the shortest reliable RMSSD length at 30 s.
         fun window(n: Int): Double? {
             val beats = (0 until n).map { rr(it.toLong(), 900) }
             return SleepStager.sessionHrvWindows(0L, 300L, beats, emptyList()).first().rmssd
         }
-        assertNull(window(HrvAnalyzer.MIN_BEATS - 1))
-        assertEquals(0.0, window(HrvAnalyzer.MIN_BEATS)!!, 1e-9)
+        assertNull(window(HrvAnalyzer.WINDOW_REFUSE_PAIRS))
+        assertEquals(0.0, window(HrvAnalyzer.WINDOW_REFUSE_PAIRS + 1)!!, 1e-9)
     }
 
     @Test
     fun sessionAvgHrvIgnoresASparseWindow() {
-        // Same fixture as Swift testSessionAvgHRVIgnoresASparseWindow: a full window of alternating
+        // Same fixture as Swift testSessionAvgHRVIgnoresASparseWindow: three full windows of alternating
         // 900/1000 ms (RMSSD 100) next to a sparse one of 900/1300 ms (RMSSD 400, 10 beats). Without the
-        // floor the sparse window counted equally and the mean was 250.
-        val full = (0 until 300).map { rr(it.toLong(), if (it % 2 == 0) 900 else 1000) }
-        val sparse = (0 until 10).map { rr(300L + it * 25L, if (it % 2 == 0) 900 else 1300) }
-        assertEquals(100.0, SleepStager.sessionAvgHRV(0L, 600L, full + sparse)!!, 1e-9)
+        // floor the sparse window counted equally and pulled the mean up; with it the sparse window is refused
+        // and the night is the full windows' 100.
+        val full = (0 until 900).map { rr(it.toLong(), if (it % 2 == 0) 900 else 1000) }
+        val sparse = (0 until 10).map { rr(900L + it * 25L, if (it % 2 == 0) 900 else 1300) }
+        assertEquals(100.0, SleepStager.sessionAvgHRV(0L, 1200L, full + sparse)!!, 1e-9)
+    }
+
+    @Test
+    fun hrvWindowsSkipAPairWhoseWallClockSaysABeatIsMissing() {
+        // Twin of Swift testSessionHrvWindowsSkipAPairWhoseWallClockSaysABeatIsMissing. A 950/1050/1150/1050
+        // triangle of time-consistent beats: every successive |difference| is 100 ms, so RMSSD is exactly 100.
+        // Dropping every fourth beat leaves the survivors' R-R values untouched, but the difference across each
+        // gap (1150 → 950) is a two-beat difference of 200 ms. Counted, as the pre-1.1 code did, those splices
+        // inflate the window to ≈ 141. Each gap spans 2.00 s against a 0.95 s interval, so the wall clock
+        // catches every one (HrvAnalyzer.pairIsTimeConsistent), and every pair that survives is a real pair
+        // with |difference| 100: the window reads exactly 100 again.
+        val pattern = intArrayOf(950, 1050, 1150, 1050)
+        val dense = ArrayList<RrInterval>()
+        var beatMs = 0L
+        for (i in 0 until 320) {
+            val ms = pattern[i % 4]
+            beatMs += ms
+            dense.add(rr(beatMs / 1000, ms))
+        }
+        val thinned = dense.filterIndexed { idx, _ -> idx % 4 != 3 }
+        val legacy = HrvAnalyzer.cleanRRGapAware(thinned.map { it.rrMs.toDouble() })
+        val spliced = HrvAnalyzer.rmssdGapAware(legacy.nn, legacy.contiguous) ?: 0.0
+        assertTrue("precondition: counting the splices inflates the window", spliced > 130.0)
+        val w = SleepStager.sessionHrvWindows(0L, 300L, thinned, emptyList())
+        assertEquals(1, w.size)
+        assertEquals("the skipped splices no longer inflate the window", 100.0, w[0].rmssd!!, 1e-9)
+        assertEquals("a quarter of the beats missing inside the span is limited, not full",
+            HrvAnalyzer.HrvWindowTier.LIMITED, w[0].tier)
+        assertTrue(w[0].coverage < 0.80)
+        assertTrue("the skipped pairs are counted out", w[0].validPairs < w[0].cleanBeats - 1 - 60)
     }
 }

@@ -31,8 +31,8 @@ class HrvOverCountGateTest {
      */
     @Test fun sameSecondOverCountIsWithheld() {
         val start = 1000L
-        val end = start + 600
-        val rr = (0 until 600).flatMap { i -> listOf(rr(start + i, 900), rr(start + i, 905)) }
+        val end = start + 900
+        val rr = (0 until 900).flatMap { i -> listOf(rr(start + i, 900), rr(start + i, 905)) }
         assertTrue("precondition: these beats DO yield an RMSSD", windowsYieldRmssd(start, end, rr))
         assertNull("an over-counted night must report no HRV", SleepStager.sessionAvgHRV(start, end, rr))
     }
@@ -40,28 +40,33 @@ class HrvOverCountGateTest {
     /** Two beats per second far enough apart that a same-second collapse cannot reach them. */
     @Test fun crossSecondOverCountIsWithheld() {
         val start = 1000L
-        val end = start + 600
-        val rr = (0 until 600).flatMap { i -> listOf(rr(start + i, 880), rr(start + i, 960)) }
+        val end = start + 900
+        val rr = (0 until 900).flatMap { i -> listOf(rr(start + i, 880), rr(start + i, 960)) }
         assertTrue("precondition: these beats DO yield an RMSSD", windowsYieldRmssd(start, end, rr))
         assertNull("an over-counted night must report no HRV", SleepStager.sessionAvgHRV(start, end, rr))
     }
 
     /** The gate must not touch an ordinary night: one beat per second, coverage ~1.0. */
     @Test fun aPlausibleNightStillReportsItsHrv() {
+        // Fifteen minutes: a night reports HRV only from HrvAnalyzer.NIGHT_MIN_WINDOWS (3) usable windows.
         val start = 1000L
-        val end = start + 600
-        val rr = (0 until 600).map { i -> rr(start + i, if (i % 2 == 0) 980 else 1020) }
+        val end = start + 900
+        val rr = (0 until 900).map { i -> rr(start + i, if (i % 2 == 0) 980 else 1020) }
         val hrv = SleepStager.sessionAvgHRV(start, end, rr)
         assertNotNull("a plausible night must keep its HRV", hrv)
         assertTrue("and it must be a real reading, not zero", hrv!! > 0.0)
     }
 
-    /** A sparse night is UNDER_COVERED, which is honest data and stays trusted. */
+    /**
+     * A sparse night is UNDER_COVERED, which is honest data and stays trusted. Sparse by HOLES: beats are
+     * present for the first 150 s of every 5-min window and absent for the rest, so the night's coverage is
+     * 0.5 while every pair that exists is a real successive pair. (Thinning every other beat instead would
+     * leave no valid pair at all: that is capture loss, which `sessionHrvWindows` refuses.)
+     */
     @Test fun anUnderCoveredNightIsNotGated() {
         val start = 1000L
-        val end = start + 600
-        // A beat every other second: ~0.5 coverage, nothing duplicated.
-        val rr = (0 until 300).map { i -> rr(start + i * 2, if (i % 2 == 0) 980 else 1020) }
+        val end = start + 900
+        val rr = (0 until 900).filter { it % 300 < 150 }.map { i -> rr(start + i, if (i % 2 == 0) 980 else 1020) }
         assertNotNull("sparse is not the same as over-counted",
             SleepStager.sessionAvgHRV(start, end, rr))
     }
@@ -95,9 +100,9 @@ class HrvOverCountGateTest {
      */
     @Test fun theTracedVerdictAgreesWithTheGate() {
         val start = 1000L
-        val end = start + 600
-        val overCounted = (0 until 600).flatMap { i -> listOf(rr(start + i, 880), rr(start + i, 960)) }
-        val plausible = (0 until 600).map { i -> rr(start + i, 900) }
+        val end = start + 900
+        val overCounted = (0 until 900).flatMap { i -> listOf(rr(start + i, 880), rr(start + i, 960)) }
+        val plausible = (0 until 900).map { i -> rr(start + i, 900) }
         for (beats in listOf(overCounted, plausible)) {
             assertTrue("precondition: these beats DO yield an RMSSD", windowsYieldRmssd(start, end, beats))
             // The trace derives "the gate refused" from exactly this pair, so pin the pair rather
