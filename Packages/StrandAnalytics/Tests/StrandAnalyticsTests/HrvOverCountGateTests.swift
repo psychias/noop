@@ -20,9 +20,9 @@ final class HrvOverCountGateTests: XCTestCase {
     /// night of this shape reports `crossSecondOverCount` internally. The outcome is what matters and is
     /// asserted here; restoring the real collapsed figure would relabel this night and change nothing.
     func testSameSecondOverCountIsWithheld() {
-        let start = 1_000, end = 1_600
+        let start = 1_000, end = 1_900
         var rr: [RRInterval] = []
-        for i in 0..<600 {
+        for i in 0..<900 {
             rr.append(RRInterval(ts: start + i, rrMs: 900))
             rr.append(RRInterval(ts: start + i, rrMs: 905))
         }
@@ -33,9 +33,9 @@ final class HrvOverCountGateTests: XCTestCase {
 
     /// Two beats per second far enough apart that a same-second collapse cannot reach them.
     func testCrossSecondOverCountIsWithheld() {
-        let start = 1_000, end = 1_600
+        let start = 1_000, end = 1_900
         var rr: [RRInterval] = []
-        for i in 0..<600 {
+        for i in 0..<900 {
             rr.append(RRInterval(ts: start + i, rrMs: 880))
             rr.append(RRInterval(ts: start + i, rrMs: 960))
         }
@@ -46,17 +46,21 @@ final class HrvOverCountGateTests: XCTestCase {
 
     /// The gate must not touch an ordinary night: one beat per second, coverage ~1.0.
     func testAPlausibleNightStillReportsItsHRV() {
-        let start = 1_000, end = 1_600
-        let rr = (0..<600).map { RRInterval(ts: start + $0, rrMs: $0 % 2 == 0 ? 980 : 1_020) }
+        // Fifteen minutes: a night reports HRV only from `HRVAnalyzer.nightMinWindows` (3) usable windows.
+        let start = 1_000, end = 1_900
+        let rr = (0..<900).map { RRInterval(ts: start + $0, rrMs: $0 % 2 == 0 ? 980 : 1_020) }
         let hrv = SleepStager.sessionAvgHRV(start: start, end: end, rr: rr)
         XCTAssertNotNil(hrv, "a plausible night must keep its HRV")
         XCTAssertGreaterThan(hrv ?? 0, 0, "and it must be a real reading, not zero")
     }
 
-    /// A sparse night is underCovered, which is honest data and stays trusted.
+    /// A sparse night is underCovered, which is honest data and stays trusted. Sparse by HOLES: beats are
+    /// present for the first 150 s of every 5-min window and absent for the rest, so the night's coverage
+    /// is 0.5 while every pair that exists is a real successive pair. (Thinning every other beat instead
+    /// would leave no valid pair at all: that is capture loss, which `sessionHrvWindows` refuses.)
     func testAnUnderCoveredNightIsNotGated() {
-        let start = 1_000, end = 1_600
-        let rr = (0..<300).map { RRInterval(ts: start + $0 * 2, rrMs: $0 % 2 == 0 ? 980 : 1_020) }
+        let start = 1_000, end = 1_900
+        let rr = (0..<900).filter { $0 % 300 < 150 }.map { RRInterval(ts: start + $0, rrMs: $0 % 2 == 0 ? 980 : 1_020) }
         XCTAssertNotNil(SleepStager.sessionAvgHRV(start: start, end: end, rr: rr),
                         "sparse is not the same as over-counted")
     }
@@ -88,10 +92,10 @@ final class HrvOverCountGateTests: XCTestCase {
     /// beside real window means reads as a value that went missing; it is usually this gate refusing an
     /// over-counted night on purpose, and the trace can only say so if it asks the same helper.
     func testTheTracedVerdictAgreesWithTheGate() {
-        let start = 1_000, end = 1_600
+        let start = 1_000, end = 1_900
         var overCounted: [RRInterval] = []
         var plausible: [RRInterval] = []
-        for i in 0..<600 {
+        for i in 0..<900 {
             overCounted.append(RRInterval(ts: start + i, rrMs: 880))
             overCounted.append(RRInterval(ts: start + i, rrMs: 960))
             plausible.append(RRInterval(ts: start + i, rrMs: 900))

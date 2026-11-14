@@ -1,0 +1,99 @@
+metricsbench hrv — 2026-11-14T10:04:39Z
+regenerate: metricsbench hrv --data research-data --seed 1 --csv research-data/bench/hrv-1.1-windows.csv
+fantasia: 40 records from research-data/fantasia
+slpdb: 18 records from research-data/slpdb
+records=58 beats=652723 seed=1
+
+== HRV: night mean RMSSD, sparse vs dense (ms). shipped = 1.1 code; legacy = pre-1.1 replica on the same stream
+regime                 split    nights refusd  shipped (estimate − reference)                                   | legacy
+cap4                   fit          20      0  n=20 bias=-0.43 LoA=[-1.93, +1.08] MAE=0.61 MAPE=1.0% CCC=0.999 r=1.000 within=100% | bias +0.00 MAE 0.00
+cap4                   holdout      38      0  n=38 bias=-0.26 LoA=[-1.27, +0.76] MAE=0.27 MAPE=0.9% CCC=0.999 r=0.999 within=100% | bias +0.00 MAE 0.00
+cap4+holes10%+fillers  fit          20      0  n=20 bias=-0.43 LoA=[-2.17, +1.32] MAE=0.68 MAPE=1.1% CCC=0.999 r=0.999 within=100% | bias +0.12 MAE 0.19
+cap4+holes10%+fillers  holdout      38      0  n=38 bias=-0.28 LoA=[-1.58, +1.01] MAE=0.31 MAPE=1.0% CCC=0.998 r=0.998 within=100% | bias +0.12 MAE 0.22
+cap4+holes30%+fillers  fit          20      0  n=20 bias=-0.75 LoA=[-2.87, +1.36] MAE=1.02 MAPE=1.7% CCC=0.999 r=0.999 within=100% | bias +0.25 MAE 0.47
+cap4+holes30%+fillers  holdout      38      0  n=38 bias=-0.31 LoA=[-1.63, +1.01] MAE=0.42 MAPE=1.5% CCC=0.998 r=0.998 within=100% | bias +0.71 MAE 0.75
+cap4+holes50%+fillers  fit          20      0  n=20 bias=-0.54 LoA=[-2.16, +1.08] MAE=0.77 MAPE=1.4% CCC=0.999 r=0.999 within=100% | bias +0.82 MAE 0.93
+cap4+holes50%+fillers  holdout      38      0  n=38 bias=-0.37 LoA=[-1.81, +1.07] MAE=0.54 MAPE=1.9% CCC=0.997 r=0.998 within=100% | bias +1.00 MAE 1.05
+
+== HRV: night tier distribution by regime (shipped)
+regime                 split    nights  normal limited refuse   full/limited/refused windows (mean per night)
+cap4                   fit          20      20       0      0   23.6 / 0.7 / 0.2
+cap4                   holdout      38      38       0      0   39.1 / 0.7 / 0.1
+cap4+holes10%+fillers  fit          20      19       1      0   17.4 / 6.8 / 0.2
+cap4+holes10%+fillers  holdout      38      38       0      0   27.9 / 11.8 / 0.1
+cap4+holes30%+fillers  fit          20       0      20      0   3.0 / 21.2 / 0.3
+cap4+holes30%+fillers  holdout      38      15      23      0   7.2 / 32.4 / 0.2
+cap4+holes50%+fillers  fit          20       0      20      0   2.4 / 21.9 / 0.2
+cap4+holes50%+fillers  holdout      38       4      34      0   3.2 / 36.5 / 0.1
+
+== HRV: 5-min windows by shipped tier, estimate − reference (ms). 'refused: legacy' = what the pre-1.1 code reported for the windows 1.1 refuses
+ regime cap4
+  fit      full     windows=   471  n=471 bias=-0.35 LoA=[-3.02, +2.33] MAE=0.73 MAPE=1.1% CCC=0.998 r=0.999 within=99%
+  fit      limited  windows=    14  n=14 bias=-1.38 LoA=[-3.90, +1.15] MAE=1.43 MAPE=3.2% CCC=0.994 r=0.997 within=100%
+  fit      refused  windows=     4  of which legacy scored 4: n=4 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  holdout  full     windows=  1484  n=1484 bias=-0.17 LoA=[-1.59, +1.24] MAE=0.31 MAPE=0.9% CCC=0.999 r=0.999 within=100%
+  holdout  limited  windows=    25  n=25 bias=-3.04 LoA=[-9.11, +3.04] MAE=3.25 MAPE=8.3% CCC=0.965 r=0.982 within=72%
+  holdout  refused  windows=     1  of which legacy scored 1: n=1 bias=+0.00 LoA=[nan, nan] MAE=0.00 MAPE=0.0% CCC=nan r=nan within=100%
+ regime cap4+holes10%+fillers
+  fit      full     windows=   348  n=348 bias=-0.28 LoA=[-3.33, +2.77] MAE=0.88 MAPE=1.3% CCC=0.998 r=0.998 within=98%
+  fit      limited  windows=   137  n=137 bias=-0.62 LoA=[-5.38, +4.14] MAE=1.60 MAPE=2.8% CCC=0.994 r=0.995 within=93%
+  fit      refused  windows=     4  of which legacy scored 4: n=4 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  holdout  full     windows=  1061  n=1061 bias=-0.16 LoA=[-1.88, +1.56] MAE=0.46 MAPE=1.3% CCC=0.998 r=0.998 within=100%
+  holdout  limited  windows=   448  n=448 bias=-0.48 LoA=[-4.64, +3.68] MAE=1.36 MAPE=3.9% CCC=0.988 r=0.989 within=96%
+  holdout  refused  windows=     1  of which legacy scored 1: n=1 bias=+0.00 LoA=[nan, nan] MAE=0.00 MAPE=0.0% CCC=nan r=nan within=100%
+ regime cap4+holes30%+fillers
+  fit      full     windows=    59  n=59 bias=-0.62 LoA=[-4.03, +2.80] MAE=1.01 MAPE=1.7% CCC=0.997 r=0.998 within=97%
+  fit      limited  windows=   424  n=424 bias=-0.61 LoA=[-6.62, +5.39] MAE=2.04 MAPE=3.5% CCC=0.992 r=0.993 within=91%
+  fit      refused  windows=     6  of which legacy scored 6: n=6 bias=+0.48 LoA=[-5.18, +6.14] MAE=1.72 MAPE=2.0% CCC=0.997 r=0.997 within=83%
+  holdout  full     windows=   274  n=274 bias=-0.14 LoA=[-1.92, +1.64] MAE=0.53 MAPE=1.5% CCC=0.998 r=0.998 within=100%
+  holdout  limited  windows=  1233  n=1233 bias=-0.22 LoA=[-4.79, +4.34] MAE=1.52 MAPE=4.7% CCC=0.987 r=0.988 within=95%
+  holdout  refused  windows=     3  of which legacy scored 3: n=3 bias=+3.07 LoA=[-9.80, +15.94] MAE=5.76 MAPE=14.1% CCC=0.875 r=0.964 within=67%
+ regime cap4+holes50%+fillers
+  fit      full     windows=    48  n=48 bias=-0.55 LoA=[-5.26, +4.16] MAE=1.55 MAPE=2.8% CCC=0.994 r=0.995 within=94%
+  fit      limited  windows=   437  n=437 bias=-0.48 LoA=[-7.93, +6.97] MAE=2.44 MAPE=4.1% CCC=0.989 r=0.989 within=87%
+  fit      refused  windows=     4  of which legacy scored 4: n=4 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  holdout  full     windows=   122  n=122 bias=-0.06 LoA=[-2.10, +1.98] MAE=0.63 MAPE=2.2% CCC=0.997 r=0.997 within=100%
+  holdout  limited  windows=  1387  n=1387 bias=-0.33 LoA=[-5.80, +5.13] MAE=1.91 MAPE=5.9% CCC=0.982 r=0.982 within=92%
+  holdout  refused  windows=     1  of which legacy scored 1: n=1 bias=+0.00 LoA=[nan, nan] MAE=0.00 MAPE=0.0% CCC=nan r=nan within=100%
+
+== HRV: wall-clock skip on an HONEST stream (cap4, no loss): pairs kept = validPairs ÷ (cleanBeats − 1) per scored window, by window mean R-R
+   prediction: with whole-second stamps a pair is skipped with probability frac(RR) when frac(RR) < tolerance, never otherwise
+  fit      RR < 0.80 s   windows=    34  kept mean 0.996  p10 0.987  min 0.968
+  fit      RR 0.80–0.99  windows=   201  kept mean 0.980  p10 0.947  min 0.913
+  fit      RR 1.00–1.24  windows=   199  kept mean 0.923  p10 0.866  min 0.770
+  fit      RR ≥ 1.25 s   windows=    51  kept mean 0.782  p10 0.673  min 0.660
+  holdout  RR < 0.80 s   windows=   272  kept mean 0.995  p10 0.987  min 0.900
+  holdout  RR 0.80–0.99  windows=   800  kept mean 0.990  p10 0.971  min 0.887
+  holdout  RR 1.00–1.24  windows=   359  kept mean 0.910  p10 0.827  min 0.774
+  holdout  RR ≥ 1.25 s   windows=    78  kept mean 0.779  p10 0.638  min 0.606
+
+== HRV: random single-beat deletion (Kim 2007 protocol), relative night-mean error, legacy vs shipped at the DEFAULT tolerance 0.5 s
+  fit      delete   5%: n= 20  legacy mean +2.1% sd 1.0%   shipped mean -0.7% sd 1.4% p10 -2.3% p90 +0.7%  pairs kept 0.90
+  fit      delete  10%: n= 20  legacy mean +3.9% sd 2.1%   shipped mean -0.3% sd 1.4% p10 -2.0% p90 +1.0%  pairs kept 0.85
+  fit      delete  20%: n= 20  legacy mean +8.0% sd 4.4%   shipped mean +0.2% sd 1.8% p10 -2.1% p90 +2.0%  pairs kept 0.78
+  fit      delete  30%: n= 20  legacy mean +12.2% sd 6.6%   shipped mean +0.8% sd 2.8% p10 -1.7% p90 +4.9%  pairs kept 0.70
+  holdout  delete   5%: n= 38  legacy mean +2.1% sd 1.3%   shipped mean -0.6% sd 1.9% p10 -1.3% p90 +0.6%  pairs kept 0.91
+  holdout  delete  10%: n= 38  legacy mean +4.6% sd 2.4%   shipped mean -0.2% sd 2.3% p10 -1.7% p90 +1.2%  pairs kept 0.87
+  holdout  delete  20%: n= 38  legacy mean +8.9% sd 4.4%   shipped mean -0.2% sd 2.4% p10 -3.6% p90 +2.0%  pairs kept 0.79
+  holdout  delete  30%: n= 38  legacy mean +13.7% sd 6.9%   shipped mean -0.0% sd 2.8% p10 -3.1% p90 +3.0%  pairs kept 0.71
+
+== HRV: gap-tolerance candidates (pre-registered 0.5 / 0.75 / 1.0 s). Selection rule: on FIT, smallest |mean error| at 30 % deletion among candidates whose cap4 night error stays within ±1 %
+  fit      tol 0.50:  del  5% -0.7%  del 10% -0.3%  del 20% +0.2%  del 30% +0.8%  | cap4 -0.72% (n=20) pairs kept 0.937
+  fit      tol 0.75:  del  5% -0.5%  del 10% -0.1%  del 20% +0.4%  del 30% +1.0%  | cap4 -0.58% (n=20) pairs kept 0.958
+  fit      tol 1.00:  del  5% +0.5%  del 10% +1.2%  del 20% +2.6%  del 30% +4.1%  | cap4 -0.38% (n=20) pairs kept 0.989
+  holdout  tol 0.50:  del  5% -0.6%  del 10% -0.2%  del 20% -0.2%  del 30% -0.0%  | cap4 -0.80% (n=38) pairs kept 0.946
+  holdout  tol 0.75:  del  5% -0.4%  del 10% -0.1%  del 20% +0.2%  del 30% +0.3%  | cap4 -0.65% (n=38) pairs kept 0.962
+  holdout  tol 1.00:  del  5% +0.4%  del 10% +1.3%  del 20% +2.3%  del 30% +3.3%  | cap4 -0.46% (n=38) pairs kept 0.993
+
+== HRV: night |error| by the counts the night tier reads (holes regimes, shipped). Evidence for the 3 / 150 / 6 thresholds
+  full <3    nights=  31 scored=  31  n=31 bias=-0.78 LoA=[-2.67, +1.11] MAE=0.91 MAPE=2.4% CCC=0.999 r=0.999 within=100% | refused 0, legacy on those: MAE nan
+  full 3–5   nights=  67 scored=  67  n=67 bias=-0.38 LoA=[-1.91, +1.15] MAE=0.61 MAPE=1.6% CCC=0.999 r=0.999 within=100% | refused 0, legacy on those: MAE nan
+  full 6–11  nights=   9 scored=   9  n=9 bias=-0.66 LoA=[-3.15, +1.82] MAE=0.69 MAPE=2.0% CCC=0.975 r=0.983 within=100% | refused 0, legacy on those: MAE nan
+  full ≥12   nights=  67 scored=  67  n=67 bias=-0.23 LoA=[-1.26, +0.81] MAE=0.34 MAPE=0.8% CCC=1.000 r=1.000 within=100% | refused 0, legacy on those: MAE nan
+  pairs <150 nights=   0 scored=   0  n=0
+  150–499    nights=   0 scored=   0  n=0
+  500–1999   nights=   0 scored=   0  n=0
+  ≥2000      nights= 174 scored= 174  n=174 bias=-0.41 LoA=[-1.95, +1.13] MAE=0.56 MAPE=1.4% CCC=0.999 r=0.999 within=100%
+
+per-window CSV written to research-data/bench/hrv-1.1-windows.csv
+

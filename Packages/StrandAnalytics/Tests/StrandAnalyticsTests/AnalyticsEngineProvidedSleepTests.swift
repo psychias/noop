@@ -13,11 +13,17 @@ final class AnalyticsEngineProvidedSleepTests: XCTestCase {
     /// Build a night [start, end) of hr (30 s) + rr (2 s, varied so RMSSD is computable) with NO gravity.
     private func nightStreams(start: Int, end: Int) -> (hr: [HRSample], rr: [RRInterval]) {
         let hr = stride(from: start, to: end, by: 30).map { HRSample(ts: $0, bpm: 52 + ($0 / 300) % 4) }
-        // rrMs cycles 1080…1120 so successive differences are non-zero → a real (non-nil) RMSSD.
+        // rrMs cycles 1080…1120 so successive differences are non-zero → a real (non-nil) RMSSD. Each beat is
+        // stamped with the whole second it falls in (time-consistent, as a strap stamps them): a 1.1 s beat
+        // every 2 s would read as a stream missing nearly half its beats and be refused.
+        var rr: [RRInterval] = []
         var i = 0
-        let rr = stride(from: start, to: end, by: 2).map { ts -> RRInterval in
-            defer { i += 1 }
-            return RRInterval(ts: ts, rrMs: 1080 + (i % 6) * 8)
+        var beatMs = start * 1000
+        while beatMs < end * 1000 {
+            let ms = 1080 + (i % 6) * 8
+            beatMs += ms
+            rr.append(RRInterval(ts: beatMs / 1000, rrMs: ms))
+            i += 1
         }
         return (hr, rr)
     }

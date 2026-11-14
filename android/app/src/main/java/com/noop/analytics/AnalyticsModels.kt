@@ -335,4 +335,12 @@ data class DayResult(
      * defaulted so every existing construction site is unchanged. Mirrors Swift `DayResult.mainNightBlocks`.
      */
     val mainNightBlocks: List<SleepStageTotals.NightBlock> = emptyList(),
+    /**
+     * The main night's HRV quality ([SleepStager.hrvNightQuality] over every window of the main-night group),
+     * or null when the day has no main night. Carries the tier the `hrv day=` line logs and the `hrv_tier` /
+     * `hrv_full_windows` / `hrv_valid_pairs` metric points persist, so that the log, the stored tier and the
+     * gate inside [SleepStager.sessionAvgHRV] all read one fold of the same windows. Trailing + defaulted.
+     * Mirrors Swift `DayResult.hrvNightQuality`.
+     */
+    val hrvNightQuality: SleepStager.HrvNightQuality? = null,
 )

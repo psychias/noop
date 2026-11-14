@@ -272,9 +272,10 @@ class AnalyticsTest {
         // session HRV if left in. cleanRR's Malik ectopic rejection drops them, so the
         // cleaned series is steady → HRV ≈ 0. Pre-fix (rangeFilter only) this path
         // returned ~200 ms; this guards against regression.
+        // Three windows, because a night reports HRV only from HrvAnalyzer.NIGHT_MIN_WINDOWS usable ones.
         val start = 1000L
-        val end = start + 300
-        val rr = (0 until 300).map { i ->
+        val end = start + 900
+        val rr = (0 until 900).map { i ->
             RrInterval(deviceId = "d", ts = start + i, rrMs = if (i % 15 == 0) 1500 else 900)
         }
         val hrv = SleepStager.sessionAvgHRV(start, end, rr)

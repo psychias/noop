@@ -3278,17 +3278,79 @@ object SleepStager {
         return all.roundToInt()
     }
 
-    /** One 5-min HRV window: its start ts, the sleep stage at its center, the clean-beat count, and the
-     *  window RMSSD (null when fewer than 2 clean beats, or when every successive pair straddles a dropped
-     *  beat). Drives both [sessionAvgHRV] and the HRV test-mode trace. */
-    data class HrvWindow(val startTs: Long, val stage: String, val cleanBeats: Int, val rmssd: Double?)
+    /**
+     * One 5-min HRV window: its start ts, the sleep stage at its center, its beat counts, its quality tier and
+     * the window RMSSD (null when the tier is REFUSE). Drives [sessionAvgHRV], [sessionHrvQuality] and the
+     * HRV test-mode trace. Mirrors Swift `SleepStager.HrvWindow`. (tiers: docs/research/01-hrv.md §4.3)
+     *
+     * [cleanBeats]: beats that survived the range and ectopic filters. [inputBeats]: rows the window received
+     * before any filter. [validPairs]: successive pairs adjacent in the stored series AND on the wall clock
+     * ([HrvAnalyzer.pairIsTimeConsistent]), the pairs [rmssd] is built from. [coverage]: [HrvAnalyzer.rrCoverage]
+     * over the window's in-range rows, beat-time ÷ first-to-last span.
+     */
+    data class HrvWindow(
+        val startTs: Long, val stage: String, val cleanBeats: Int, val rmssd: Double?,
+        val inputBeats: Int, val validPairs: Int, val coverage: Double, val tier: HrvAnalyzer.HrvWindowTier,
+    )
+
+    /**
+     * A night's HRV quality, summed over its windows. [validPairs] counts the non-refused windows (the pairs
+     * the night's RMSSD is built from); [inputBeats] counts ALL windows, refused ones included — 0 means the
+     * span banked no R-R at all, which is "never measured", not "refused" (the #1884 fill-in rule reads
+     * this). Mirrors Swift `SleepStager.HrvNightQuality`.
+     */
+    data class HrvNightQuality(
+        val tier: HrvAnalyzer.HrvNightTier,
+        val fullWindows: Int,
+        val limitedWindows: Int,
+        val refusedWindows: Int,
+        val validPairs: Int,
+        val inputBeats: Int,
+    ) {
+        /** Full + limited: the windows whose RMSSD the night pools. */
+        val usableWindows: Int get() = fullWindows + limitedWindows
+    }
+
+    /**
+     * Fold windows into a night quality: counts by tier, valid pairs over the usable windows, and the night
+     * tier from [HrvAnalyzer.hrvNightTier]. Pure. Byte-parity twin of Swift `hrvNightQuality`.
+     */
+    internal fun hrvNightQuality(windows: List<HrvWindow>): HrvNightQuality {
+        var full = 0
+        var limited = 0
+        var refused = 0
+        var pairs = 0
+        var input = 0
+        for (w in windows) {
+            input += w.inputBeats
+            when (w.tier) {
+                HrvAnalyzer.HrvWindowTier.FULL -> { full += 1; pairs += w.validPairs }
+                HrvAnalyzer.HrvWindowTier.LIMITED -> { limited += 1; pairs += w.validPairs }
+                HrvAnalyzer.HrvWindowTier.REFUSE -> refused += 1
+            }
+        }
+        return HrvNightQuality(
+            tier = HrvAnalyzer.hrvNightTier(usableWindows = full + limited, fullWindows = full, validPairs = pairs),
+            fullWindows = full, limitedWindows = limited, refusedWindows = refused,
+            validPairs = pairs, inputBeats = input,
+        )
+    }
+
+    /** The night quality fold over the session's own windows, windowed [start, end] exactly as the value is.
+     *  [rr] must be ts-sorted (the windowing contract). Byte-parity twin of Swift `SleepStager.sessionHrvQuality`. */
+    internal fun sessionHrvQuality(start: Long, end: Long, rr: List<RrInterval>): HrvNightQuality =
+        hrvNightQuality(sessionHrvWindows(start, end, rr, emptyList()))
 
     /**
      * Mean RMSSD over 5-min tumbling windows across the session (ms), or null.
-     * A window counts only with [HrvAnalyzer.MIN_BEATS] clean intervals (see [sessionHrvWindows]).
+     * A window counts only when its tier is not REFUSE (see [sessionHrvWindows]), and the night reports
+     * nothing when its own tier is REFUSE ([HrvAnalyzer.hrvNightTier]: fewer than three usable windows or
+     * fewer than 150 valid pairs). A LIMITED night still reports; its tier travels beside the value.
      */
     internal fun sessionAvgHRV(start: Long, end: Long, rr: List<RrInterval>): Double? {
-        val vals = sessionHrvWindows(start, end, rr, emptyList()).mapNotNull { it.rmssd }
+        val windows = sessionHrvWindows(start, end, rr, emptyList())
+        if (hrvNightQuality(windows).tier == HrvAnalyzer.HrvNightTier.REFUSE) return null
+        val vals = windows.mapNotNull { it.rmssd }
         if (vals.isEmpty()) return null
         // #1118: refuse the night outright when its own R-R banks more beat-time than the wall clock it
         // spans. Gated HERE rather than at the caller because this is where RMSSD BECOMES the day's HRV:
@@ -3337,9 +3399,13 @@ object SleepStager {
      * one, which is `[t, end]`, so a beat sitting exactly on an aligned `end` lands in a window instead of
      * being admitted by the prefilter and then dropped. Window stage tagging and [HrvWindow.startTs] are
      * unchanged — the final window keeps its half-open center `t + windowS / 2`.
+     * Byte-parity twin of Swift `SleepStager.sessionHrvWindows`.
      */
     internal fun sessionHrvWindows(
         start: Long, end: Long, rr: List<RrInterval>, stages: List<StageSegment>,
+        // [HrvAnalyzer.PAIR_GAP_TOLERANCE_S] for every production caller; a parameter so a bench can sweep the
+        // pre-registered candidates over the same code the app runs (mirrors the Swift default parameter).
+        gapToleranceS: Double = HrvAnalyzer.PAIR_GAP_TOLERANCE_S,
     ): List<HrvWindow> {
         // CONTRACT: `rr` MUST already be ts-sorted (RMSSD is built from SUCCESSIVE differences, so a bucket
         // has to be chronological). The value path passes the loop's pre-sorted `rrS`; the trace caller sorts
@@ -3373,7 +3439,9 @@ object SleepStager {
                 val upper = t + windowS
                 while (j < seg.size && seg[j].ts < upper) j++
             }
-            val bucket = seg.subList(i, j).map { it.rrMs.toDouble() }
+            val bucketRows = seg.subList(i, j)
+            val bucket = bucketRows.map { it.rrMs.toDouble() }
+            val bucketTs = bucketRows.map { it.ts }
             if (!isFinal) i = j
             // Full clean (range + Malik ectopic rejection), not just range — matches the
             // analyze() pipeline. The 0x2A37 RR on a WHOOP 5/MG is PPG-derived and noisier
@@ -3381,17 +3449,37 @@ object SleepStager {
             // jitter spike inflates the session HRV. Ectopic rejection drops those (#262/#235).
             // Gap-aware: a dropped ectopic/out-of-range beat must not splice its two neighbours into a
             // spurious successive difference, which is the exact spike the rejection above is meant to
-            // remove. See HrvAnalyzer.rmssdGapAware.
-            val cleaned = HrvAnalyzer.cleanRRGapAware(bucket)
-            // The same MIN_BEATS floor the spot reading and the SDNN index apply. The night is a plain mean
-            // over windows, so without it a window left with a handful of clean beats (a dropout, a
-            // movement-shredded stretch, a short final window) weighed as much as a full five minutes.
-            val rmssd = if (cleaned.nn.size >= HrvAnalyzer.MIN_BEATS) {
-                HrvAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous)
-            } else null
+            // remove. See HrvAnalyzer.rmssdGapAware. The timestamps go in too, so a beat the STRAP never
+            // reported is skipped the same way: with its neighbours' gap exceeding their R-R, the difference
+            // across it is not a successive one.
+            val cleaned = HrvAnalyzer.cleanRRTimeAware(bucket, bucketTs, gapToleranceS)
+            var validPairs = 0
+            for (c in cleaned.contiguous) if (c) validPairs += 1
+            // Coverage over the in-range rows only: a value outside [300, 2000] ms is not beat-time this code
+            // believes in, so it must not count as time covered either.
+            val covTs = ArrayList<Long>()
+            val covMs = ArrayList<Double>()
+            for (k in bucket.indices) {
+                if (bucket[k] >= HrvAnalyzer.RR_MIN_MS && bucket[k] <= HrvAnalyzer.RR_MAX_MS) { covTs.add(bucketTs[k]); covMs.add(bucket[k]) }
+            }
+            val coverage = HrvAnalyzer.rrCoverage(covTs, covMs)
+            // The pair floor replaces the MIN_BEATS 20 floor this window used to apply: 30 valid pairs is
+            // Baek 2015's 30-s minimum for a reliable 5-min RMSSD, and the pairs are counted AFTER the
+            // wall-clock skip, so a window shredded by capture loss cannot reach the mean on beat count
+            // alone. The night is a plain mean over windows, so a thin window must not weigh as much as a
+            // full five minutes; refusing it is what keeps that true.
+            val tier = HrvAnalyzer.hrvWindowTier(
+                validPairs = validPairs, inputBeats = bucket.size, cleanBeats = cleaned.nn.size, coverage = coverage,
+            )
+            val rmssd = if (tier == HrvAnalyzer.HrvWindowTier.REFUSE) null else HrvAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous)
             val center = t + windowS / 2
             val stage = stages.firstOrNull { center >= it.start && center < it.end }?.stage ?: "?"
-            out.add(HrvWindow(startTs = t, stage = stage, cleanBeats = cleaned.nn.size, rmssd = rmssd))
+            out.add(
+                HrvWindow(
+                    startTs = t, stage = stage, cleanBeats = cleaned.nn.size, rmssd = rmssd,
+                    inputBeats = bucket.size, validPairs = validPairs, coverage = coverage, tier = tier,
+                ),
+            )
             t += windowS
         } while (t < end)
         return out

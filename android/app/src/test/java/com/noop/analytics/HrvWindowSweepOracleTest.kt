@@ -37,16 +37,20 @@ class HrvWindowSweepOracleTest {
         var t = start
         do {
             val isFinal = t + windowS >= end
-            val bucket = seg.filter { it.ts >= t && (isFinal || it.ts < t + windowS) }.map { it.rrMs.toDouble() }
-            val cleaned = HrvAnalyzer.cleanRRGapAware(bucket)
-            val rmssd = if (cleaned.nn.size >= HrvAnalyzer.MIN_BEATS) {
-                HrvAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous)
-            } else {
-                null
-            }
+            val rows = seg.filter { it.ts >= t && (isFinal || it.ts < t + windowS) }
+            val bucket = rows.map { it.rrMs.toDouble() }
+            // The per-window quality step (ts-aware cleaning, valid pairs, in-range coverage, tier) is the
+            // SAME production primitives applied to the naive bucket, so what this oracle pins is the
+            // bucketing: which rows reach which window.
+            val cleaned = HrvAnalyzer.cleanRRTimeAware(bucket, rows.map { it.ts })
+            val validPairs = cleaned.contiguous.count { it }
+            val inRange = rows.filter { it.rrMs.toDouble() >= HrvAnalyzer.RR_MIN_MS && it.rrMs.toDouble() <= HrvAnalyzer.RR_MAX_MS }
+            val coverage = HrvAnalyzer.rrCoverage(inRange.map { it.ts }, inRange.map { it.rrMs.toDouble() })
+            val tier = HrvAnalyzer.hrvWindowTier(validPairs, rows.size, cleaned.nn.size, coverage)
+            val rmssd = if (tier == HrvAnalyzer.HrvWindowTier.REFUSE) null else HrvAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous)
             val center = t + windowS / 2
             val stage = stages.firstOrNull { center >= it.start && center < it.end }?.stage ?: "?"
-            out.add(SleepStager.HrvWindow(t, stage, cleaned.nn.size, rmssd))
+            out.add(SleepStager.HrvWindow(t, stage, cleaned.nn.size, rmssd, rows.size, validPairs, coverage, tier))
             t += windowS
         } while (t < end)
         return out

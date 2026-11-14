@@ -1,0 +1,111 @@
+metricsbench hrv — 2026-11-12T16:34:49Z
+regenerate: metricsbench hrv --data research-data --seed 1 --csv research-data/bench/hrv-windows.csv
+fantasia: 40 records from /Users/steliospsychias/Desktop/noop/research-data/fantasia
+slpdb: 18 records from /Users/steliospsychias/Desktop/noop/research-data/slpdb
+records=58 beats=652723 seed=1
+
+== HRV: night mean RMSSD, sparse vs dense (same shipped functions, ms)
+regime                 nights refusd  agreement (estimate − reference)
+cap4                       58      0  n=58 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+cap4+holes10%+fillers      58      0  n=58 bias=+0.12 LoA=[-0.37, +0.61] MAE=0.21 MAPE=0.6% CCC=1.000 r=1.000 within=100%
+cap4+holes30%+fillers      58      0  n=58 bias=+0.55 LoA=[-0.65, +1.76] MAE=0.66 MAPE=2.1% CCC=0.999 r=1.000 within=100%
+cap4+holes50%+fillers      58      0  n=58 bias=+0.94 LoA=[-0.52, +2.39] MAE=1.01 MAPE=3.2% CCC=0.998 r=0.999 within=100%
+  group elderly:
+  cap4                     20         n=20 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  cap4+holes10%+fillers     20         n=20 bias=+0.08 LoA=[-0.59, +0.75] MAE=0.22 MAPE=0.9% CCC=1.000 r=1.000 within=100%
+  cap4+holes30%+fillers     20         n=20 bias=+0.66 LoA=[-0.88, +2.20] MAE=0.74 MAPE=3.0% CCC=0.996 r=0.998 within=100%
+  cap4+holes50%+fillers     20         n=20 bias=+0.77 LoA=[-0.75, +2.29] MAE=0.87 MAPE=4.0% CCC=0.996 r=0.998 within=100%
+  group slpdb:
+  cap4                     18         n=18 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  cap4+holes10%+fillers     18         n=18 bias=+0.17 LoA=[-0.15, +0.49] MAE=0.21 MAPE=0.6% CCC=0.999 r=1.000 within=100%
+  cap4+holes30%+fillers     18         n=18 bias=+0.76 LoA=[+0.13, +1.40] MAE=0.76 MAPE=2.2% CCC=0.993 r=0.999 within=100%
+  cap4+holes50%+fillers     18         n=18 bias=+1.25 LoA=[+0.26, +2.23] MAE=1.25 MAPE=3.7% CCC=0.981 r=0.998 within=100%
+  group young:
+  cap4                     20         n=20 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  cap4+holes10%+fillers     20         n=20 bias=+0.12 LoA=[-0.28, +0.51] MAE=0.19 MAPE=0.4% CCC=1.000 r=1.000 within=100%
+  cap4+holes30%+fillers     20         n=20 bias=+0.25 LoA=[-0.78, +1.28] MAE=0.47 MAPE=1.0% CCC=1.000 r=1.000 within=100%
+  cap4+holes50%+fillers     20         n=20 bias=+0.82 LoA=[-0.80, +2.45] MAE=0.93 MAPE=2.0% CCC=0.999 r=0.999 within=100%
+
+== HRV: 5-min windows, sparse vs dense, by harness validPairs (ms)
+   'refused' = the shipped minBeats floor already returned nil for the window
+ regime cap4
+  validPairs <20    windows=     1 refused=    0  n=1 bias=+0.00 LoA=[nan, nan] MAE=0.00 MAPE=0.0% CCC=nan r=nan within=100%
+  validPairs 20–29  windows=     4 refused=    0  n=4 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  validPairs 30–49  windows=     8 refused=    0  n=8 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  validPairs ≥50    windows=  1986 refused=    0  n=1986 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+ regime cap4+holes10%+fillers
+  validPairs <20    windows=     1 refused=    0  n=1 bias=+0.00 LoA=[nan, nan] MAE=0.00 MAPE=0.0% CCC=nan r=nan within=100%
+  validPairs 20–29  windows=     4 refused=    0  n=4 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  validPairs 30–49  windows=     8 refused=    0  n=8 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  validPairs ≥50    windows=  1986 refused=    0  n=1986 bias=+0.13 LoA=[-2.09, +2.36] MAE=0.57 MAPE=1.6% CCC=0.998 r=0.998 within=99%
+ regime cap4+holes30%+fillers
+  validPairs <20    windows=     4 refused=    0  n=4 bias=+1.60 LoA=[-7.95, +11.16] MAE=2.85 MAPE=6.1% CCC=0.994 r=0.995 within=75%
+  validPairs 20–29  windows=     5 refused=    0  n=5 bias=+1.14 LoA=[-7.04, +9.31] MAE=3.25 MAPE=5.9% CCC=0.990 r=0.994 within=80%
+  validPairs 30–49  windows=    14 refused=    0  n=14 bias=+0.79 LoA=[-4.30, +5.88] MAE=1.90 MAPE=5.5% CCC=0.987 r=0.990 within=86%
+  validPairs ≥50    windows=  1976 refused=    0  n=1976 bias=+0.64 LoA=[-3.83, +5.11] MAE=1.59 MAPE=4.5% CCC=0.993 r=0.994 within=95%
+ regime cap4+holes50%+fillers
+  validPairs <20    windows=     1 refused=    0  n=1 bias=+0.00 LoA=[nan, nan] MAE=0.00 MAPE=0.0% CCC=nan r=nan within=100%
+  validPairs 20–29  windows=     4 refused=    0  n=4 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  validPairs 30–49  windows=    15 refused=    0  n=15 bias=-1.01 LoA=[-9.53, +7.51] MAE=2.52 MAPE=5.4% CCC=0.981 r=0.983 within=73%
+  validPairs ≥50    windows=  1979 refused=    0  n=1979 bias=+1.03 LoA=[-5.16, +7.22] MAE=2.25 MAPE=6.6% CCC=0.986 r=0.988 within=89%
+
+== HRV: 5-min windows, sparse vs dense, by window coverage (Σ RR / span)
+ regime cap4
+  coverage <0.70     windows=     3 refused=    0  n=3 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  coverage 0.70–0.85 windows=    13 refused=    0  n=13 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  coverage 0.85–0.95 windows=    50 refused=    0  n=50 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  coverage ≥0.95     windows=  1933 refused=    0  n=1933 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+ regime cap4+holes10%+fillers
+  coverage <0.70     windows=    22 refused=    0  n=22 bias=+0.99 LoA=[-4.41, +6.40] MAE=2.11 MAPE=6.1% CCC=0.985 r=0.987 within=86%
+  coverage 0.70–0.85 windows=   477 refused=    0  n=477 bias=+0.22 LoA=[-3.48, +3.92] MAE=1.30 MAPE=3.6% CCC=0.995 r=0.995 within=98%
+  coverage 0.85–0.95 windows=   526 refused=    0  n=526 bias=+0.21 LoA=[-1.87, +2.30] MAE=0.75 MAPE=2.0% CCC=0.999 r=0.999 within=100%
+  coverage ≥0.95     windows=   974 refused=    0  n=974 bias=+0.03 LoA=[-0.48, +0.54] MAE=0.08 MAPE=0.2% CCC=1.000 r=1.000 within=100%
+ regime cap4+holes30%+fillers
+  coverage <0.70     windows=   579 refused=    0  n=579 bias=+1.10 LoA=[-5.14, +7.34] MAE=2.46 MAPE=7.0% CCC=0.986 r=0.987 within=87%
+  coverage 0.70–0.85 windows=   846 refused=    0  n=846 bias=+0.54 LoA=[-3.63, +4.70] MAE=1.60 MAPE=4.6% CCC=0.995 r=0.995 within=96%
+  coverage 0.85–0.95 windows=   360 refused=    0  n=360 bias=+0.48 LoA=[-1.89, +2.86] MAE=0.96 MAPE=2.7% CCC=0.998 r=0.998 within=100%
+  coverage ≥0.95     windows=   214 refused=    0  n=214 bias=+0.10 LoA=[-1.32, +1.53] MAE=0.32 MAPE=0.8% CCC=0.999 r=0.999 within=100%
+ regime cap4+holes50%+fillers
+  coverage <0.70     windows=  1063 refused=    0  n=1063 bias=+1.42 LoA=[-6.11, +8.95] MAE=2.95 MAPE=8.8% CCC=0.979 r=0.981 within=82%
+  coverage 0.70–0.85 windows=   667 refused=    0  n=667 bias=+0.64 LoA=[-3.63, +4.92] MAE=1.58 MAPE=4.5% CCC=0.994 r=0.994 within=95%
+  coverage 0.85–0.95 windows=   158 refused=    0  n=158 bias=+0.54 LoA=[-3.25, +4.33] MAE=1.42 MAPE=3.7% CCC=0.995 r=0.995 within=97%
+  coverage ≥0.95     windows=   111 refused=    0  n=111 bias=-0.05 LoA=[-2.72, +2.61] MAE=0.61 MAPE=1.8% CCC=0.998 r=0.998 within=98%
+
+== HRV: what a validPairs floor would do (windows the floor keeps; nights = mean of kept windows)
+ regime cap4
+  floor 20: keeps  1998/ 1999 windows (99.9%)  windows: n=1998 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+            nights (58): n=58 bias=-0.01 LoA=[-0.23, +0.20] MAE=0.01 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+  floor 30: keeps  1994/ 1999 windows (99.7%)  windows: n=1994 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+            nights (58): n=58 bias=-0.02 LoA=[-0.47, +0.43] MAE=0.06 MAPE=0.1% CCC=1.000 r=1.000 within=100%
+  floor 50: keeps  1986/ 1999 windows (99.3%)  windows: n=1986 bias=+0.00 LoA=[+0.00, +0.00] MAE=0.00 MAPE=0.0% CCC=1.000 r=1.000 within=100%
+            nights (58): n=58 bias=-0.07 LoA=[-0.68, +0.54] MAE=0.11 MAPE=0.3% CCC=1.000 r=1.000 within=100%
+ regime cap4+holes10%+fillers
+  floor 20: keeps  1998/ 1999 windows (99.9%)  windows: n=1998 bias=+0.13 LoA=[-2.08, +2.35] MAE=0.57 MAPE=1.6% CCC=0.998 r=0.998 within=99%
+            nights (58): n=58 bias=+0.11 LoA=[-0.43, +0.64] MAE=0.22 MAPE=0.7% CCC=1.000 r=1.000 within=100%
+  floor 30: keeps  1994/ 1999 windows (99.7%)  windows: n=1994 bias=+0.13 LoA=[-2.08, +2.35] MAE=0.57 MAPE=1.6% CCC=0.998 r=0.998 within=99%
+            nights (58): n=58 bias=+0.10 LoA=[-0.63, +0.83] MAE=0.25 MAPE=0.7% CCC=1.000 r=1.000 within=100%
+  floor 50: keeps  1986/ 1999 windows (99.3%)  windows: n=1986 bias=+0.13 LoA=[-2.09, +2.36] MAE=0.57 MAPE=1.6% CCC=0.998 r=0.998 within=99%
+            nights (58): n=58 bias=+0.05 LoA=[-0.80, +0.90] MAE=0.29 MAPE=0.8% CCC=1.000 r=1.000 within=100%
+ regime cap4+holes30%+fillers
+  floor 20: keeps  1995/ 1999 windows (99.8%)  windows: n=1995 bias=+0.64 LoA=[-3.84, +5.13] MAE=1.59 MAPE=4.6% CCC=0.993 r=0.994 within=95%
+            nights (58): n=58 bias=+0.52 LoA=[-0.80, +1.85] MAE=0.67 MAPE=2.1% CCC=0.999 r=0.999 within=100%
+  floor 30: keeps  1990/ 1999 windows (99.5%)  windows: n=1990 bias=+0.64 LoA=[-3.84, +5.12] MAE=1.59 MAPE=4.6% CCC=0.993 r=0.993 within=95%
+            nights (58): n=58 bias=+0.48 LoA=[-0.91, +1.86] MAE=0.68 MAPE=2.1% CCC=0.999 r=0.999 within=100%
+  floor 50: keeps  1976/ 1999 windows (98.8%)  windows: n=1976 bias=+0.64 LoA=[-3.83, +5.11] MAE=1.59 MAPE=4.5% CCC=0.993 r=0.994 within=95%
+            nights (58): n=58 bias=+0.46 LoA=[-0.95, +1.88] MAE=0.67 MAPE=2.0% CCC=0.999 r=0.999 within=100%
+ regime cap4+holes50%+fillers
+  floor 20: keeps  1998/ 1999 windows (99.9%)  windows: n=1998 bias=+1.01 LoA=[-5.20, +7.22] MAE=2.25 MAPE=6.5% CCC=0.987 r=0.988 within=88%
+            nights (58): n=58 bias=+0.92 LoA=[-0.55, +2.40] MAE=1.00 MAPE=3.2% CCC=0.998 r=0.999 within=100%
+  floor 30: keeps  1994/ 1999 windows (99.7%)  windows: n=1994 bias=+1.01 LoA=[-5.20, +7.23] MAE=2.25 MAPE=6.6% CCC=0.986 r=0.988 within=88%
+            nights (58): n=58 bias=+0.92 LoA=[-0.57, +2.42] MAE=0.98 MAPE=3.2% CCC=0.998 r=0.999 within=100%
+  floor 50: keeps  1979/ 1999 windows (99.0%)  windows: n=1979 bias=+1.03 LoA=[-5.16, +7.22] MAE=2.25 MAPE=6.6% CCC=0.986 r=0.988 within=89%
+            nights (58): n=58 bias=+0.87 LoA=[-0.69, +2.43] MAE=0.94 MAPE=3.1% CCC=0.998 r=0.999 within=100%
+
+== HRV: random single-beat deletion (Kim 2007 protocol), relative night-mean RMSSD error
+  delete   5% of beats: n=58  mean +2.1%  sd 1.2%  p10 +0.7%  p90 +3.5%
+  delete  10% of beats: n=58  mean +4.3%  sd 2.3%  p10 +0.9%  p90 +7.4%
+  delete  20% of beats: n=58  mean +8.6%  sd 4.4%  p10 +1.6%  p90 +13.0%
+  delete  30% of beats: n=58  mean +13.2%  sd 6.8%  p10 +3.0%  p90 +20.0%
+
+per-window CSV written to research-data/bench/hrv-windows.csv
+

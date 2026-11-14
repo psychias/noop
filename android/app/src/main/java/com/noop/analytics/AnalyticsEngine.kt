@@ -632,6 +632,30 @@ object AnalyticsEngine {
         val providedPrimaryRHR = primarySession
             ?.let { p -> providedSleep.firstOrNull { it.start == p.start && it.end == p.end }?.restingHR }
         val restingHRDaily: Int? = providedPrimaryRHR ?: primarySession?.restingHR
+        // The main night's HRV quality, folded ONCE over every window of the main-night group and read by the
+        // refused-main-night rule below, the `hrv day=` line and the persisted `hrv_tier` points. Per-session
+        // tiers are kept beside it because `sessionAvgHRV` gates per SESSION, and a bridged night's short
+        // fragment can be refused on its own while the group as a whole is fine. null when there is no main
+        // night. Sorted once here (RMSSD is built from successive differences; `sessionHrvWindows` requires it).
+        // Byte-parity twin of the Swift block of the same name.
+        val mainNightHrvQuality: SleepStager.HrvNightQuality?
+        val mainSessionHrvTier: Map<Long, HrvAnalyzer.HrvNightTier>
+        if (mainGroup.isEmpty()) {
+            mainNightHrvQuality = null
+            mainSessionHrvTier = emptyMap()
+        } else {
+            val rrSorted = rr.sortedBy { it.ts }
+            val windows = ArrayList<SleepStager.HrvWindow>()
+            val tiers = LinkedHashMap<Long, HrvAnalyzer.HrvNightTier>()
+            for (s in mainGroup) {
+                val w = SleepStager.sessionHrvWindows(s.start, s.end, rrSorted, emptyList())
+                tiers[s.start] = SleepStager.hrvNightQuality(w).tier
+                windows.addAll(w)
+            }
+            mainNightHrvQuality = SleepStager.hrvNightQuality(windows)
+            mainSessionHrvTier = tiers
+        }
+
         // Daily avg HRV = in-bed-weighted mean of per-session avg HRV.
         val avgHRVDaily: Double? = if (deepHrvWindow) {
             // #141: WHOOP-style HRV — pool RMSSD over DEEP-stage 5-min windows only (slow-wave sleep),
@@ -653,9 +677,14 @@ object AnalyticsEngine {
             // night. So when a main-group session's HRV is null BECAUSE the gate refused it, only the main
             // group is pooled, and the day holds (null) unless another fragment of that night measured
             // cleanly. A main night that simply banked no R-R is not refused, so #1884's fill-in from the
-            // day's other sessions is unchanged. Byte-parity twin of Swift `avgHRVDaily`.
+            // day's other sessions is unchanged. The quality tier refuses the same way: a main night whose
+            // windows banked R-R but not enough valid pairs for a number (HrvNightTier.REFUSE) must not hand
+            // the day to a nap either; a night with no R-R rows at all (`inputBeats == 0`) is "never measured"
+            // and keeps the fill-in. Byte-parity twin of Swift `avgHRVDaily`.
             val mainNightRefused = mainGroup.any { s ->
-                s.avgHRV == null && SleepStager.sessionHrvOverCounted(s.start, s.end, rr)
+                s.avgHRV == null &&
+                    (SleepStager.sessionHrvOverCounted(s.start, s.end, rr) ||
+                        (mainSessionHrvTier[s.start] == HrvAnalyzer.HrvNightTier.REFUSE && (mainNightHrvQuality?.inputBeats ?: 0) > 0))
             }
             val hrvPool = if (mainNightRefused) {
                 physiologySessions.filter { p -> mainGroup.any { it.start == p.start && it.end == p.end } }
@@ -735,17 +764,37 @@ object AnalyticsEngine {
             // NOT in deep-window mode. That branch re-derives from `sessionHrvWindows` and never reads
             // `s.avgHRV`, so the gate plays no part in its nil and naming it would be a diagnostic
             // asserting a cause it did not verify. `nDeep` on this same line already explains that case.
-            val refused = !deepHrvWindow && avgHRVDaily == null && withR.isNotEmpty() &&
+            //
+            // Two gates can now make that null, and the line names which, because a diagnostic may only
+            // assert what it can attribute: `overCount` is `sessionHrvOverCounted` on a session that had
+            // windows with an RMSSD; `tier` is a session whose own HrvNightTier is REFUSE. Both can hold.
+            val overCountRefused = !deepHrvWindow && avgHRVDaily == null && withR.isNotEmpty() &&
                 physiologySessions.any { s ->
                     SleepStager.sessionHrvWindows(s.start, s.end, rrSorted, emptyList())
                         .any { it.rmssd != null } &&
-                        SleepStager.sessionAvgHRV(s.start, s.end, rrSorted) == null
+                        SleepStager.sessionHrvOverCounted(s.start, s.end, rrSorted)
                 }
+            val tierRefused = !deepHrvWindow && avgHRVDaily == null &&
+                physiologySessions.any { s ->
+                    val q = SleepStager.sessionHrvQuality(s.start, s.end, rrSorted)
+                    q.tier == HrvAnalyzer.HrvNightTier.REFUSE && q.inputBeats > 0
+                }
+            val refusedField = when {
+                overCountRefused && tierRefused -> "refused=overCount+tier "
+                overCountRefused -> "refused=overCount "
+                tierRefused -> "refused=tier "
+                else -> ""
+            }
+            // The main night's tier and window counts (full/limited/refused) and valid pairs, from the same
+            // fold the `hrv day=` line and the stored `hrv_tier` read. `tier=none` when the day has no main night.
+            val tierField = mainNightHrvQuality?.let {
+                "tier=${it.tier.raw} win=${it.fullWindows}/${it.limitedWindows}/${it.refusedWindows} pairs=${it.validPairs}"
+            } ?: "tier=none"
             hrvTraceSink(
                 "hrv nightSummary reported=${avgHRVDaily?.let { "${round2(it)}ms" } ?: "nil"} " +
-                    (if (refused) "refused=overCount " else "") +
+                    refusedField +
                     "wholeNight=${meanMs(withR)} deepOnly=${meanMs(deepW)} " +
-                    "lastSWS=${meanMs(lastSws)} nWin=${withR.size} nDeep=${deepW.size}",
+                    "lastSWS=${meanMs(lastSws)} nWin=${withR.size} nDeep=${deepW.size} $tierField",
             )
         }
 
@@ -1098,6 +1147,7 @@ object AnalyticsEngine {
             gravitySparse = gravitySparse,
             detectionFunnel = detectionFunnel,
             mainNightBlocks = mainGroup.map { SleepStageTotals.NightBlock(it.start, it.end) },
+            hrvNightQuality = mainNightHrvQuality,
         )
     }
 

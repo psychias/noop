@@ -2091,7 +2091,7 @@ public enum SleepStager {
     /// costs far more data than it saves, and both medians (over intervals, then over windows) dilute a
     /// single spurious peak among a five-minute window's worth.
     /// Returns NaN when too few intervals survive (honest no-data).
-    static func respRateFromRR(_ rr: [RRInterval], start: Int, end: Int) -> Double {
+    public static func respRateFromRR(_ rr: [RRInterval], start: Int, end: Int) -> Double {
         let nan = Double.nan
         if end <= start { return nan }
 
@@ -2915,7 +2915,7 @@ public enum SleepStager {
             + "gated=\(gatedFloor.map(String.init) ?? "nil") shipped=\(shippedFloor) gateMoved=\(moved)"
     }
 
-    static func sessionRestingHR(start: Int, end: Int, hr: [HRSample]) -> Int? {
+    public static func sessionRestingHR(start: Int, end: Int, hr: [HRSample]) -> Int? {
         let seg = hr.filter { $0.ts >= start && $0.ts <= end }
         guard !seg.isEmpty else { return nil }
         let windowS = 5 * 60
@@ -2948,19 +2948,73 @@ public enum SleepStager {
         return Int(all.rounded())
     }
 
-    /// One 5-min HRV window: its start ts, the sleep stage at its center, the clean-beat count, and the
-    /// window RMSSD (nil when <2 clean beats). Drives both `sessionAvgHRV` and the HRV test-mode trace. (#141)
+    /// One 5-min HRV window: its start ts, the sleep stage at its center, its beat counts, its quality tier
+    /// and the window RMSSD (nil when the tier is `refuse`). Drives `sessionAvgHRV`, `sessionHrvQuality` and
+    /// the HRV test-mode trace. (#141; tiers: docs/research/01-hrv.md §4.3)
     public struct HrvWindow: Sendable {
         public let startTs: Int
         public let stage: String
+        /// Beats that survived the range and ectopic filters.
         public let cleanBeats: Int
+        /// RMSSD over the window's VALID pairs (ms); nil when `tier == .refuse`.
         public let rmssd: Double?
+        /// Rows the window received before any filter (the `rejectedFraction` denominator).
+        public let inputBeats: Int
+        /// Successive pairs that were adjacent in the stored series AND adjacent on the wall clock
+        /// (`HRVAnalyzer.pairIsTimeConsistent`): the pairs `rmssd` is built from.
+        public let validPairs: Int
+        /// `HRVAnalyzer.rrCoverage` over the window's in-range rows: beat-time ÷ first-to-last span. Below
+        /// `coveragePlausibleFloor` beats went unreported INSIDE the span (a hole at an edge does not lower it).
+        public let coverage: Double
+        public let tier: HRVAnalyzer.HrvWindowTier
+    }
+
+    /// A night's HRV quality, summed over its windows. Pure value; `hrvNightQuality` is the one builder.
+    public struct HrvNightQuality: Equatable, Sendable {
+        public let tier: HRVAnalyzer.HrvNightTier
+        public let fullWindows: Int
+        public let limitedWindows: Int
+        public let refusedWindows: Int
+        /// Valid pairs across the non-refused windows (the pairs the night's RMSSD is built from).
+        public let validPairs: Int
+        /// Rows across ALL windows, refused ones included: 0 means the span banked no R-R at all, which is
+        /// "never measured", not "refused" (the #1884 fill-in rule reads this).
+        public let inputBeats: Int
+        /// Full + limited: the windows whose RMSSD the night pools.
+        public var usableWindows: Int { fullWindows + limitedWindows }
+    }
+
+    /// Fold windows into a night quality: counts by tier, valid pairs over the usable windows, and the
+    /// night tier from `HRVAnalyzer.hrvNightTier`. Pure. Byte-parity twin of Kotlin `hrvNightQuality`.
+    public static func hrvNightQuality(_ windows: [HrvWindow]) -> HrvNightQuality {
+        var full = 0, limited = 0, refused = 0, pairs = 0, input = 0
+        for w in windows {
+            input += w.inputBeats
+            switch w.tier {
+            case .full: full += 1; pairs += w.validPairs
+            case .limited: limited += 1; pairs += w.validPairs
+            case .refuse: refused += 1
+            }
+        }
+        return HrvNightQuality(tier: HRVAnalyzer.hrvNightTier(usableWindows: full + limited, fullWindows: full, validPairs: pairs),
+                               fullWindows: full, limitedWindows: limited, refusedWindows: refused,
+                               validPairs: pairs, inputBeats: input)
+    }
+
+    /// The night quality fold over the session's own windows, windowed [start, end] exactly as the value is.
+    /// `rr` must be ts-sorted (the windowing contract). Byte-parity twin of Kotlin `SleepStager.sessionHrvQuality`.
+    public static func sessionHrvQuality(start: Int, end: Int, rr: [RRInterval]) -> HrvNightQuality {
+        hrvNightQuality(sessionHrvWindows(start: start, end: end, rr: rr, stages: []))
     }
 
     /// Mean RMSSD over 5-min tumbling windows across the session (ms), or nil.
-    /// A window counts only with `HRVAnalyzer.minBeats` clean intervals (see `sessionHrvWindows`).
-    static func sessionAvgHRV(start: Int, end: Int, rr: [RRInterval]) -> Double? {
-        let vals = sessionHrvWindows(start: start, end: end, rr: rr, stages: []).compactMap { $0.rmssd }
+    /// A window counts only when its tier is not `refuse` (see `sessionHrvWindows`), and the night reports
+    /// nothing when its own tier is `refuse` (`HRVAnalyzer.hrvNightTier`: fewer than three usable windows
+    /// or fewer than 150 valid pairs). A `limited` night still reports; its tier travels beside the value.
+    public static func sessionAvgHRV(start: Int, end: Int, rr: [RRInterval]) -> Double? {
+        let windows = sessionHrvWindows(start: start, end: end, rr: rr, stages: [])
+        guard hrvNightQuality(windows).tier != .refuse else { return nil }
+        let vals = windows.compactMap { $0.rmssd }
         if vals.isEmpty { return nil }
         // #1118: refuse the night outright when its own R-R banks more beat-time than the wall clock it
         // spans. Gated HERE rather than at the caller because this is where RMSSD BECOMES the day's HRV:
@@ -2981,7 +3035,7 @@ public enum SleepStager {
     /// definition of "refused": `sessionAvgHRV` gates on it, and `AnalyticsEngine` asks it whether a main
     /// night's missing HRV was refused rather than never measured, so the two cannot disagree about which
     /// nights were refused. Byte-parity twin of Kotlin `SleepStager.sessionHrvOverCounted`.
-    static func sessionHrvOverCounted(start: Int, end: Int, rr: [RRInterval]) -> Bool {
+    public static func sessionHrvOverCounted(start: Int, end: Int, rr: [RRInterval]) -> Bool {
         let seg = rr.filter { $0.ts >= start && $0.ts <= end }
         let segTs = seg.map { $0.ts }
         let segMs = seg.map { Double($0.rrMs) }
@@ -3006,7 +3060,12 @@ public enum SleepStager {
     /// the final one, which is `[t, end]`, so a beat sitting exactly on an aligned `end` lands in a
     /// window instead of being admitted by the prefilter and then dropped. Window stage tagging and
     /// `startTs` are unchanged — the final window keeps its half-open center `t + windowS / 2`.
-    static func sessionHrvWindows(start: Int, end: Int, rr: [RRInterval], stages: [StageSegment]) -> [HrvWindow] {
+    ///
+    /// `gapToleranceS` is the shipped pair-gap tolerance for every production caller; it is a parameter so
+    /// `Tools/MetricsBench` can sweep the pre-registered candidates over the same code the app runs.
+    /// Byte-parity twin of Kotlin `SleepStager.sessionHrvWindows`.
+    public static func sessionHrvWindows(start: Int, end: Int, rr: [RRInterval], stages: [StageSegment],
+                                         gapToleranceS: Double = HRVAnalyzer.pairGapToleranceS) -> [HrvWindow] {
         // CONTRACT: `rr` MUST already be ts-sorted (RMSSD is built from SUCCESSIVE differences, so a bucket
         // has to be chronological). The value path passes the loop's pre-sorted `rrS`; the trace caller sorts
         // its own copy. Not sorted here on purpose — re-sorting the value path could reorder same-second RR
@@ -3043,22 +3102,38 @@ public enum SleepStager {
                 while j < seg.endIndex && seg[j].ts < upper { j += 1 }
             }
             let bucket = seg[i..<j].map { Double($0.rrMs) }
+            let bucketTs = seg[i..<j].map { $0.ts }
             if !isFinal { i = j }
             // Full clean (range + Malik ectopic rejection), not just range — matches the
             // analyze() pipeline. The 0x2A37 RR on a WHOOP 5/MG is PPG-derived and noisier
             // than a 4.0's; rMSSD is built from SUCCESSIVE differences, so an un-rejected
             // jitter spike inflates the session HRV. Ectopic rejection drops those (#262/#235).
             // #204/#195: gap-aware — a successive difference straddling a dropped beat is skipped so a
-            // removed out-of-range/ectopic beat can't splice its neighbours into a spurious delta.
-            let cleaned = HRVAnalyzer.cleanRRGapAware(bucket)
-            // The same `minBeats` floor the spot reading and the SDNN index apply. The night is a plain mean
-            // over windows, so without it a window left with a handful of clean beats (a dropout, a
-            // movement-shredded stretch, a short final window) weighed as much as a full five minutes.
-            let rmssd: Double? = (cleaned.nn.count >= HRVAnalyzer.minBeats)
-                ? HRVAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous) : nil
+            // removed out-of-range/ectopic beat can't splice its neighbours into a spurious delta. The
+            // timestamps go in too, so a beat the STRAP never reported is skipped the same way: with its
+            // neighbours' gap exceeding their R-R, the difference across it is not a successive one.
+            let cleaned = HRVAnalyzer.cleanRRTimeAware(rrMs: bucket, tsSec: bucketTs, gapToleranceS: gapToleranceS)
+            var validPairs = 0
+            for c in cleaned.contiguous where c { validPairs += 1 }
+            // Coverage over the in-range rows only: a value outside [300, 2000] ms is not beat-time this
+            // code believes in, so it must not count as time covered either.
+            var covTs: [Int] = [], covMs: [Double] = []
+            for k in 0..<bucket.count where bucket[k] >= HRVAnalyzer.rrMinMs && bucket[k] <= HRVAnalyzer.rrMaxMs {
+                covTs.append(bucketTs[k]); covMs.append(bucket[k])
+            }
+            let coverage = HRVAnalyzer.rrCoverage(tsSec: covTs, rrMs: covMs)
+            // The pair floor replaces the `minBeats` 20 floor this window used to apply: 30 valid pairs is
+            // Baek 2015's 30-s minimum for a reliable 5-min RMSSD, and the pairs are counted AFTER the
+            // wall-clock skip, so a window shredded by capture loss cannot reach the mean on beat count
+            // alone. The night is a plain mean over windows, so a thin window must not weigh as much as a
+            // full five minutes; refusing it is what keeps that true.
+            let tier = HRVAnalyzer.hrvWindowTier(validPairs: validPairs, inputBeats: bucket.count,
+                                                 cleanBeats: cleaned.nn.count, coverage: coverage)
+            let rmssd: Double? = tier == .refuse ? nil : HRVAnalyzer.rmssdGapAware(cleaned.nn, cleaned.contiguous)
             let center = t + windowS / 2
             let stage = stages.first { center >= $0.start && center < $0.end }?.stage ?? "?"
-            out.append(HrvWindow(startTs: t, stage: stage, cleanBeats: cleaned.nn.count, rmssd: rmssd))
+            out.append(HrvWindow(startTs: t, stage: stage, cleanBeats: cleaned.nn.count, rmssd: rmssd,
+                                 inputBeats: bucket.count, validPairs: validPairs, coverage: coverage, tier: tier))
             t += windowS
         } while t < end
         return out

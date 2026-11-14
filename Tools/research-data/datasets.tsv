@@ -1,0 +1,15 @@
+# name	kind	url	verify	licence	note
+# kind: physionet (zip from the get-zip endpoint, verified against the SHA256SUMS.txt inside) | zenodo (one file, md5 from the records API) | uci (zip, no published checksum) | ora (Oxford Research Archive file) | manual (data-use agreement; no automatic download)
+# verify: sha256sums | md5:<hex> | none
+sleep-accel	physionet	https://physionet.org/content/sleep-accel/get-zip/1.0.0/	sha256sums	ODC-By 1.0	Walch 2019: wrist accelerometer + PPG HR + PSG labels, 31 subjects (550 MB zip). Sleep staging, RHR window sensitivity.
+fantasia	physionet	https://physionet.org/content/fantasia/get-zip/1.0.0/	sha256sums	ODC-By 1.0	Fantasia: 40 subjects (20 young, 20 elderly), 120 min supine ECG + respiration at 250 Hz with beat annotations (293 MB). RSA respiration, HRV sparsity.
+slpdb	physionet	https://physionet.org/content/slpdb/get-zip/1.0.0/	sha256sums	ODC-By 1.0	MIT-BIH Polysomnographic: 16 subjects, ECG beats + respiration + R&K stages (632 MB). Respiration by stage, HRV by stage.
+bidmc	physionet	https://physionet.org/content/bidmc/get-zip/1.0.0/	sha256sums	ODC-By 1.0	BIDMC: 53 x 8 min ICU PPG + ECG + impedance respiration with annotated breaths (208 MB).
+wrist	physionet	https://physionet.org/content/wrist/get-zip/1.0.0/	sha256sums	ODC-By 1.0	Wrist PPG During Exercise: 8 subjects, wrist PPG + chest ECG with marked R peaks (50 MB).
+galaxyppg	zenodo	https://zenodo.org/api/records/14635823/files/GalaxyPPG.zip/content	md5:d9a48bfcd07928fb22b96dc40cf2e7d4	CC BY 4.0	GalaxyPPG: 24 adults, Galaxy Watch 5 PPG 25 Hz + E4 BVP + Polar H10 ECG with ms IBIs (482 MB).
+sleep-deprivation-rr	zenodo	https://zenodo.org/api/records/4326598/files/RR.zip/content	md5:1fb86ced5d2bad6eda3423577e398073	CC BY 4.0	Sleep deprivation HRV/PPG/PSG study (Zenodo 4326598): the R-R archive only (0.3 MB). PPG site unverified.
+ppg-dalia	uci	https://archive.ics.uci.edu/static/public/495/ppg+dalia.zip	none	CC BY 4.0	PPG-DaLiA: 15 subjects, E4 wrist BVP 64 Hz + chest ECG 700 Hz + respiration, daily activities (2.7 GB). No checksum is published; the script prints the sha256 it saw.
+wesad	uci	https://archive.ics.uci.edu/static/public/465/wesad+wearable+stress+and+affect+detection.zip	none	per original site	WESAD: 15 subjects, E4 wrist BVP + chest ECG, lab stress protocol. No checksum is published.
+oxwalk	ora	https://ora.ox.ac.uk/objects/uuid:19d3cb34-e2b3-4177-91b6-1bad0e0163e7/files/dcj82k7829	none	CC BY 4.0	OxWalk: 100 Hz / 25 Hz wrist accelerometer with hand-annotated steps (290 MB).
+dreamt	manual	https://physionet.org/content/dreamt/2.2.0/	none	PhysioNet Restricted Health Data 1.5.0	DREAMT: wrist PPG + IBI + 1 Hz HR + PSG, 100 participants. Needs a PhysioNet account and the data-use agreement; download by hand into research-data/dreamt/.
+treadmill-exercise-cardioresp	manual	https://physionet.org/content/treadmill-exercise-cardioresp/1.0.1/	none	PhysioNet Contributor Review Health Data 1.5.0	Malaga treadmill maximal tests: 992 tests with breath-by-breath VO2 and HR (22 MB). Needs a PhysioNet account and the data-use agreement; download by hand into research-data/treadmill-exercise-cardioresp/.
